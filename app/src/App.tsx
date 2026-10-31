@@ -1430,6 +1430,33 @@ export function App() {
     patchObject(id, { data: { ...(o.data as ImageData), ...patch } });
   };
 
+  // ── 文書既定フォントの変更（v0.8）──
+  // 「既定フォント」は本文書体の文書レベル設定 — 変更は既存の
+  // 執筆テキストへ即時反映し、以後の新規エリア・新ページ枠の
+  // 初期値にもなる（docFont 参照）。適用対象の規則:
+  //   - data.auto / data.genko を持つ自動生成の執筆枠 — モードを
+  //     問わず追従（升目枠は常に本文用の枠）
+  //   - 執筆モードでは全テキストエリア — 文書全体が本文。auto 印の
+  //     無い旧書庫・下書きのエリアや、組版で手配置したエリアも
+  //     執筆モードでは本文の一部として揃える
+  // 組版モードで手配置したエリア（auto/genko 印なし）は触らない —
+  // エリア単位の書体指定は組版の仕事として残す
+  const applyDocFont = (font: string) => {
+    setDocFont(font);
+    engine.setDoc({
+      ...engine.doc,
+      objects: engine.doc.objects.map((o) => {
+        if (o.kind !== TEXT_KIND) return o;
+        const d = o.data as TextAreaData | undefined;
+        if (!(d?.auto || d?.genko || writeMode)) return o;
+        return {
+          ...o,
+          data: { ...DEFAULT_TEXT_DATA, ...d, fontFamily: font },
+        };
+      }),
+    });
+  };
+
   // ── F25: 複製・コピー＆ペースト（テキストエリアは対象外） ──
   const groupSeqRef = useRef(1);
   // 既存ドキュメント（書庫由来の gN を含む）と被らない新しいグループID
@@ -2703,7 +2730,7 @@ export function App() {
             pageOpacity,
             onOpacity: setPageOpacity,
             font: docFont,
-            onFont: setDocFont,
+            onFont: applyDocFont,
             pageNum,
             onPageNum: setPageNum,
             gridPrint,

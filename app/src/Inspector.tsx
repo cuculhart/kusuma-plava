@@ -212,7 +212,11 @@ export function RightDock({
     onInsertAfter: (index: number) => void;
     onFooter: (on: boolean) => void;
     onOpacity: (v: number) => void;
-    /** ドキュメント既定フォント（新規テキストエリアへ適用） */
+    /** ドキュメント既定フォント — 本文書体の文書レベル設定。
+        変更は自動生成の執筆枠（auto/genko）と、執筆モードでは
+        全テキストエリアへ即時適用される（App.tsx applyDocFont）。
+        新規テキストエリアの初期値でもある。組版モードで手配置
+        したエリアの個別書体は上書きしない */
     font: string;
     onFont: (s: string) => void;
     /** v0.3: ページ番号（ノンブル）を印刷に出すか */

@@ -520,6 +520,11 @@ export function ChainPane({
       </div>
       {areaData && (
         <div className="chain-font">
+          {/* 書体は執筆モードでは畳む（v0.8）— 本文書体は文書設定の
+              「既定フォント」が全エリアへ一括適用する。1連鎖が複数
+              ページへ跨ぐのに連鎖先頭エリアだけを変える選択肢は
+              誤適用のもと。組版モードでは従来どおりエリア単位で編集可 */}
+          {!writeMode && (
           <label>
             {t('chain.font')}
             <select
@@ -538,6 +543,7 @@ export function ChainPane({
               )}
             </select>
           </label>
+          )}
           {/* 字サイズは文書設定の升目仕様（縦×横）が自動決定するため
               執筆モードでは畳む（v0.6）— 組版モードでは従来どおり編集可 */}
           {!writeMode && (
