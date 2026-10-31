@@ -14,6 +14,12 @@ import type { TFunc } from './i18n';
 import { tf } from './i18n';
 import { ChainPane } from './ChainPane';
 import type { GenkoGrid, ImageData, TextAreaData } from './types';
+
+// v0.9: 升目仕様プリセット — id は i18n の doc.preset.<id> キーに対応
+const GENKO_PRESETS: { id: string; cells: number; cols: number }[] = [
+  { id: 'g400', cells: 20, cols: 20 },
+  { id: 'bunko', cells: 42, cols: 34 },
+];
 import { FONT_SIZES_MM, IMG_KIND, MM_PX, TEXT_KIND } from './types';
 import { fontOptions, useSysFonts } from './useSysFonts';
 
@@ -901,6 +907,27 @@ function DocProps({
             確定値のみ適用（1〜100の整数）。升目枠は新仕様へ作り直される */}
         <div className="ins-row" title={t('doc.genkoTip')}>
           {t('doc.genko')}
+          {/* v0.9: 用途別プリセット — 400字詰=原稿用紙、
+              文庫=ラノベの1ページ（39〜42字×32〜34行）。
+              手入力の値がどれとも一致しなければ「カスタム」表示 */}
+          <select
+            value={GENKO_PRESETS.find(
+              (p) => p.cells === genko.cells && p.cols === genko.cols,
+            )?.id ?? 'custom'}
+            onChange={(e) => {
+              const p = GENKO_PRESETS.find(
+                (q) => q.id === e.currentTarget.value,
+              );
+              if (p) onGenko({ cells: p.cells, cols: p.cols });
+            }}
+          >
+            {GENKO_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {t(`doc.preset.${p.id}`)}
+              </option>
+            ))}
+            <option value="custom">{t('doc.preset.custom')}</option>
+          </select>
           <span className="genko-inputs">
             {t('doc.genkoV')}
             {genkoInput('cells')}
