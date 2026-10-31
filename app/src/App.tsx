@@ -83,9 +83,14 @@ function syncSnapExtra(engine: Engine, model: PageModel): void {
   engine.snapExtra = { xs, ys };
 }
 
+/** 版面マージン（mm）— buildWritingDoc の簡易版面と
+    用紙変更時の追従計算（refitWritingAreas）で共用する規約。
+    天/地/小口/ノド一律 */
+const HANMEN_MARGIN_MM = 20;
+
 /** 執筆モード既定ドキュメント（v0.2）— 第1ページの版面
-    （上下左右 20mm マージン）を覆う縦書きテキストエリア1枚 +
-    それに繋がる連鎖1本。新規作成・初期起動で
+    （上下左右 HANMEN_MARGIN_MM マージン）を覆う縦書き
+    テキストエリア1枚 + それに繋がる連鎖1本。新規作成・初期起動で
     「原稿用紙 + 執筆ペイン」の形に開く。 */
 function buildWritingDoc(font: string): {
   model: PageModel;
@@ -94,7 +99,7 @@ function buildWritingDoc(font: string): {
 } {
   const model = createPages({ size: 'A4', landscape: false }, 1);
   const p = pageRectAt(model.spec, 0);
-  const m = 20; // 版面マージン（mm）— 天/地/小口/ノド一律の簡易版面
+  const m = HANMEN_MARGIN_MM;
   const areaId = 'ta1';
   return {
     model,
@@ -112,11 +117,52 @@ function buildWritingDoc(font: string): {
           ...DEFAULT_TEXT_DATA,
           fontFamily: font,
           writing: 'vertical-rl',
+          // 自動生成の印 — 用紙変更時の版面追従の判別材料
+          // （判定自体は版面矩形との一致で行う。refitWritingAreas 参照）
+          auto: true,
         },
       },
     ],
     chains: [{ id: 'c1', areas: [areaId], text: '' }],
   };
+}
+
+/** 用紙 spec 変更に伴い、版面を覆うテキストエリアを新しい版面へ追従させる。
+    対象 = 旧 spec でいずれかのページ版面（HANMEN_MARGIN_MM 内側）を
+    ちょうど覆う TEXT_KIND オブジェクト。判定を data.auto の印ではなく
+    版面矩形との一致で行うのは、印のない旧 .slm 書庫・旧下書きの
+    自動生成エリアも救済するため（ユーザーが版面ぴったりに置いた
+    エリアも追従するが、これは版面エリアとして妥当な挙動とみなす）。
+    版面から外れているエリア — auto 印付きでもユーザーが動かしたもの —、
+    および画像・その他のオブジェクトは一切触れない。
+    追従先は同じページスロットの新 spec での版面矩形。 */
+function refitWritingAreas(
+  objects: WorldObject[],
+  prev: PageModel,
+  next: PageModel,
+): WorldObject[] {
+  const m = HANMEN_MARGIN_MM;
+  const eps = 0.01; // mm — 浮動小数の計算誤差を許容
+  const prevRects = pageRects(prev.spec, prev.pages);
+  return objects.map((o) => {
+    if (o.kind !== TEXT_KIND) return o;
+    const hit = prevRects.find(
+      (r) =>
+        Math.abs(o.x - (r.x + m)) <= eps &&
+        Math.abs(o.y - (r.y + m)) <= eps &&
+        Math.abs(o.w - (r.w - 2 * m)) <= eps &&
+        Math.abs(o.h - (r.h - 2 * m)) <= eps,
+    );
+    if (!hit) return o;
+    const p = pageRectAt(next.spec, hit.slot);
+    return {
+      ...o,
+      x: p.x + m,
+      y: p.y + m,
+      w: p.w - 2 * m,
+      h: p.h - 2 * m,
+    };
+  });
 }
 
 /** 画像取り込みダイアログの状態 */
@@ -469,12 +515,15 @@ export function App() {
     });
     syncSnapExtra(engine, next);
   };
-  const setSize = (size: PaperSize) =>
-    commitPages(setPaper(model, { ...model.spec, size }));
+  // 用紙サイズ・向きの変更 — 版面を覆う自動生成エリアは
+  // 新しい版面へ追従させる（手置きエリアは触らない。refitWritingAreas 参照）
+  const applySpec = (spec: PageModel['spec']) => {
+    const next = setPaper(model, spec);
+    commitPages(next, refitWritingAreas(contentObjects(), model, next));
+  };
+  const setSize = (size: PaperSize) => applySpec({ ...model.spec, size });
   const toggleLandscape = () =>
-    commitPages(
-      setPaper(model, { ...model.spec, landscape: !model.spec.landscape }),
-    );
+    applySpec({ ...model.spec, landscape: !model.spec.landscape });
   const appendPage = () => commitPages(addPage(model));
   const removePage = (id: string) => commitPages(deletePage(model, id));
   const insertAt = (index: number) => {

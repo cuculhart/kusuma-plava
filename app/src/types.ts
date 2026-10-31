@@ -42,6 +42,10 @@ export interface TextAreaData {
   /** 組方向。省略時は 'horizontal' 扱い（旧書庫との後方互換）。
       新規エリアは生成時に 'vertical-rl' を明示して持つ */
   writing?: WritingMode;
+  /** buildWritingDoc が版面を覆って自動生成したエリアの印（出所の記録。
+      用紙変更時の追従判定自体は版面との矩形一致で行う — App.tsx の
+      refitWritingAreas 参照。ユーザーが手で作ったエリアには付かない） */
+  auto?: boolean;
 }
 
 export const DEFAULT_TEXT_DATA: TextAreaData = {
