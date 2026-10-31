@@ -6,12 +6,13 @@ import {
   addPage,
   adjustMarksForEdit,
   applyMark,
-  applyVerticalShift,
+  applyStackShift,
   canLink,
   chainOf,
   clearMarksIn,
   createPages,
   deletePage,
+  insertArea,
   insertPage,
   layoutChain,
   linkChains,
@@ -20,6 +21,7 @@ import {
   pageRectAt,
   pageRects,
   pruneChains,
+  remapRectAxis,
   RUBY_LANE_RATIO,
   setPaper,
   sliceRuns,
@@ -30,6 +32,7 @@ import {
   type PageModel,
   type PaperSize,
   type PaperSpec,
+  type StackAxis,
   type TextAttrs,
 } from 'inimbal';
 import { RightDock } from './Inspector';
@@ -64,9 +67,14 @@ import {
 import './styles.css';
 
 /** ページ枠を kimetron オブジェクトとして展開する。
-    locked + layer -1 で最背面・操作対象外（hitFilter でも除外）。 */
-function pageObjects(model: PageModel, opacity = 1): WorldObject[] {
-  return pageRects(model.spec, model.pages).map((r) => ({
+    locked + layer -1 で最背面・操作対象外（hitFilter でも除外）。
+    axis = ページの積み方向（'y'=組版の縦積み / 'x'=執筆の右→左横積み） */
+function pageObjects(
+  model: PageModel,
+  opacity = 1,
+  axis: StackAxis = 'y',
+): WorldObject[] {
+  return pageRects(model.spec, model.pages, axis).map((r) => ({
     id: r.id,
     kind: PAGE_KIND,
     x: r.x,
@@ -81,10 +89,14 @@ function pageObjects(model: PageModel, opacity = 1): WorldObject[] {
 }
 
 /** ページの辺・中心をドラッグ/リサイズのスナップ対象へ登録する */
-function syncSnapExtra(engine: Engine, model: PageModel): void {
+function syncSnapExtra(
+  engine: Engine,
+  model: PageModel,
+  axis: StackAxis,
+): void {
   const xs: number[] = [];
   const ys: number[] = [];
-  for (const r of pageRects(model.spec, model.pages)) {
+  for (const r of pageRects(model.spec, model.pages, axis)) {
     xs.push(r.x, r.x + r.w / 2, r.x + r.w);
     ys.push(r.y, r.y + r.h / 2, r.y + r.h);
   }
@@ -127,10 +139,11 @@ function genkoFrame(
   spec: PaperSpec,
   slot: number,
   g: GenkoGrid,
+  axis: StackAxis = 'y',
 ): { x: number; y: number; w: number; h: number; fontSize: number } | null {
   const fs = genkoFontSize(spec, g);
   if (fs == null) return null;
-  const p = pageRectAt(spec, slot);
+  const p = pageRectAt(spec, slot, axis);
   const w = g.cols * fs * (1 + RUBY_LANE_RATIO) + 2 * TEXT_PAD_MM;
   const h = g.cells * fs + 2 * TEXT_PAD_MM;
   return {
@@ -154,11 +167,13 @@ function buildWritingDoc(font: string): {
   chains: Chain[];
 } {
   const model = createPages({ size: 'A4', landscape: true }, 1);
-  const p = pageRectAt(model.spec, 0);
+  // 生成するオブジェクトは常に正準系 'y' 座標 — インストール時に
+  // 現在のモード軸へ remapAxis で載せ替える（書庫・下書き比較の基準形）
+  const p = pageRectAt(model.spec, 0, 'y');
   const m = HANMEN_MARGIN_MM;
   const areaId = 'ta1';
   // 升目枠が組めない極端な用紙では旧来の版面ぴったりエリアへ退く
-  const f = genkoFrame(model.spec, 0, GENKO_GRID);
+  const f = genkoFrame(model.spec, 0, GENKO_GRID, 'y');
   const rect = f ?? { x: p.x + m, y: p.y + m, w: p.w - 2 * m, h: p.h - 2 * m };
   return {
     model,
@@ -203,10 +218,11 @@ function refitWritingAreas(
   objects: WorldObject[],
   prev: PageModel,
   next: PageModel,
+  axis: StackAxis = 'y',
 ): WorldObject[] {
   const m = HANMEN_MARGIN_MM;
   const eps = 0.01; // mm — 浮動小数の計算誤差を許容
-  const prevRects = pageRects(prev.spec, prev.pages);
+  const prevRects = pageRects(prev.spec, prev.pages, axis);
   return objects.map((o) => {
     if (o.kind !== TEXT_KIND) return o;
     const g = (o.data as TextAreaData | undefined)?.genko;
@@ -219,7 +235,7 @@ function refitWritingAreas(
         (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
       );
       if (!hit) return o;
-      const pf = genkoFrame(prev.spec, hit.slot, g);
+      const pf = genkoFrame(prev.spec, hit.slot, g, axis);
       if (
         !pf ||
         Math.abs(o.x - pf.x) > eps ||
@@ -228,7 +244,7 @@ function refitWritingAreas(
         Math.abs(o.h - pf.h) > eps
       )
         return o;
-      const f = genkoFrame(next.spec, hit.slot, g);
+      const f = genkoFrame(next.spec, hit.slot, g, axis);
       if (!f) return o;
       return {
         ...o,
@@ -247,7 +263,7 @@ function refitWritingAreas(
         Math.abs(o.h - (r.h - 2 * m)) <= eps,
     );
     if (!hit) return o;
-    const p = pageRectAt(next.spec, hit.slot);
+    const p = pageRectAt(next.spec, hit.slot, axis);
     return {
       ...o,
       x: p.x + m,
@@ -411,6 +427,32 @@ export function App() {
   placingRef.current = placing;
   const measurerRef = useRef(createCanvasMeasurer());
 
+  // ── 積み軸（v0.4）— ページは同じ PageModel を2つの世界座標系で解釈する:
+  //   'y' = 組版モードの縦積み（従来）、'x' = 執筆モードの右→左横積み。
+  // エンジンの doc オブジェクトは常に「現在のモード軸」の座標で保持し、
+  // モード切替時に remapAxis で全オブジェクトを載せ替える。
+  // 書庫・履歴スナップ・下書き・印刷展開は常に正準系 'y' — 境界で
+  // canon/uncanon が変換する（往復変換は紙面上のオブジェクトで厳密）。
+  const curAxis = (): StackAxis => (writeModeRef.current ? 'x' : 'y');
+  const remapAxis = (
+    objects: WorldObject[],
+    from: StackAxis,
+    to: StackAxis,
+    spec: PaperSpec,
+  ): WorldObject[] =>
+    from === to
+      ? objects
+      : objects.map((o) => {
+          const r = remapRectAxis(spec, o, from, to);
+          return { ...o, x: r.x, y: r.y };
+        });
+  /** 現在モード座標のオブジェクト列 → 正準系 'y' */
+  const canon = (objects: WorldObject[], spec = model.spec) =>
+    remapAxis(objects, curAxis(), 'y', spec);
+  /** 正準系 'y' のオブジェクト列 → 現在モード座標 */
+  const uncanon = (objects: WorldObject[], spec = model.spec) =>
+    remapAxis(objects, 'y', curAxis(), spec);
+
   const flash = (msg: string) => {
     setHint(msg);
     window.setTimeout(() => setHint((h) => (h === msg ? '' : h)), 2500);
@@ -435,9 +477,12 @@ export function App() {
         : null;
     engine.setDoc({
       ...engine.doc,
-      objects: [...pageObjects(model), ...initDoc.objects],
+      objects: [
+        ...pageObjects(model, 1, curAxis()),
+        ...uncanon(initDoc.objects),
+      ],
     });
-    syncSnapExtra(engine, model);
+    syncSnapExtra(engine, model, curAxis());
     focusPage(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine]);
@@ -618,15 +663,21 @@ export function App() {
       objects ?? engine.doc.objects.filter((o) => o.kind !== PAGE_KIND);
     engine.setDoc({
       ...engine.doc,
-      objects: [...pageObjects(next, pageOpacity / 100), ...content],
+      objects: [
+        ...pageObjects(next, pageOpacity / 100, curAxis()),
+        ...content,
+      ],
     });
-    syncSnapExtra(engine, next);
+    syncSnapExtra(engine, next, curAxis());
   };
   // 用紙サイズ・向きの変更 — 版面を覆う自動生成エリアは
   // 新しい版面へ追従させる（手置きエリアは触らない。refitWritingAreas 参照）
   const applySpec = (spec: PageModel['spec']) => {
     const next = setPaper(model, spec);
-    commitPages(next, refitWritingAreas(contentObjects(), model, next));
+    commitPages(
+      next,
+      refitWritingAreas(contentObjects(), model, next, curAxis()),
+    );
     focusPage(curPage, next);
   };
   const setSize = (size: PaperSize) => applySpec({ ...model.spec, size });
@@ -640,7 +691,7 @@ export function App() {
     // 末尾へ繋ぐ — あふれが次ページへそのまま流れる
     if (writeModeRef.current) {
       const slot = next.pages[next.pages.length - 1].slot;
-      const f = genkoFrame(next.spec, slot, genko);
+      const f = genkoFrame(next.spec, slot, genko, curAxis());
       if (f) {
         const id = nextId('ta');
         content.push({
@@ -676,17 +727,70 @@ export function App() {
   };
   const removePage = (id: string) => commitPages(deletePage(model, id));
   const insertAt = (index: number) => {
-    const res = insertPage(model, index);
-    const content = applyVerticalShift(
+    const ax = curAxis();
+    const res = insertPage(model, index, undefined, ax);
+    const content = applyStackShift(
       engine.doc.objects.filter((o) => o.kind !== PAGE_KIND),
-      res.thresholdY,
-      res.dy,
+      res.axis,
+      res.threshold,
+      res.delta,
     );
-    commitPages({ ...model, pages: res.pages }, content);
+    const next = { ...model, pages: res.pages };
+    // 執筆モードでは挿入ページにも升目グリッド枠を自動生成する
+    // （ページ追加 appendPage と同じ規約 — 枠が無いと升目が描かれず
+    // 執筆もできない）。連鎖への接続はページ順に合わせて、
+    // 以降のページ上にある最初のエリアの直前へ挿入する。
+    if (writeModeRef.current) {
+      const f = genkoFrame(next.spec, res.page.slot, genko, ax);
+      if (f) {
+        const id = nextId('ta');
+        content.push({
+          id,
+          kind: TEXT_KIND,
+          x: f.x,
+          y: f.y,
+          w: f.w,
+          h: f.h,
+          style: { stroke: 'rgba(90,110,140,0.4)' },
+          data: {
+            ...DEFAULT_TEXT_DATA,
+            fontFamily: docFont,
+            fontSize: f.fontSize,
+            writing: 'vertical-rl',
+            auto: true,
+            genko: { ...genko },
+          } satisfies TextAreaData,
+        });
+        const target =
+          chainsRef.current.find((c) => c.id === writeChainId) ??
+          chainsRef.current[0];
+        if (target) {
+          const rects = pageRects(next.spec, res.pages, ax);
+          const pageIndexOf = (areaId: string): number => {
+            const o = content.find((x) => x.id === areaId);
+            if (!o) return -1;
+            const cx = o.x + o.w / 2;
+            const cy = o.y + o.h / 2;
+            const r = rects.find(
+              (p) =>
+                cx >= p.x && cx < p.x + p.w && cy >= p.y && cy < p.y + p.h,
+            );
+            return r ? r.index : -1;
+          };
+          // 表示順 index 以上のページに乗る最初のエリアの直前へ挿入
+          const at = target.areas.findIndex(
+            (a) => pageIndexOf(a) >= index,
+          );
+          const at2 = at === -1 ? target.areas.length : at;
+          setChains((cs) => insertArea(cs, target.id, at2, id));
+        }
+      }
+    }
+    commitPages(next, content);
   };
   const insertBelow = (index: number) => insertAt(index + 1);
   const removeCurrentPage = () => {
-    const r = pageRects(model.spec, model.pages)[curPage];
+    const r = pageRects(model.spec, model.pages, curAxis())[curPage];
     if (r) removePage(r.id);
   };
 
@@ -695,8 +799,10 @@ export function App() {
     engine.doc.objects.filter((o) => o.kind !== PAGE_KIND);
 
   // ── Undo/Redo（doc＋連鎖＋ページ＋設定の統合スナップショット） ──
+  // オブジェクト座標は常に正準系 'y' で保存 — モードを跨いだ
+  // undo/redo でも正しい世界へ復元される
   const makeSnap = (): Snap => ({
-    objects: contentObjects(),
+    objects: canon(contentObjects()),
     chains,
     model,
     footer,
@@ -715,11 +821,11 @@ export function App() {
     engine.setDoc({
       ...engine.doc,
       objects: [
-        ...pageObjects(s.model, s.pageOpacity / 100),
-        ...s.objects,
+        ...pageObjects(s.model, s.pageOpacity / 100, curAxis()),
+        ...uncanon(s.objects, s.model.spec),
       ],
     });
-    syncSnapExtra(engine, s.model);
+    syncSnapExtra(engine, s.model, curAxis());
     setChains(s.chains);
     setFooter(s.footer);
     setDocTitle(s.title);
@@ -843,7 +949,7 @@ export function App() {
         const u8 = packArchive({
           spec: model.spec,
           pages: model.pages,
-          objects: contentObjects(),
+          objects: canon(contentObjects()),
           chains,
           footer,
           title: docTitle,
@@ -866,6 +972,31 @@ export function App() {
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha]);
+
+  // v0.4: 執筆モードのホイール横送り — ページは右→左に並ぶので
+  // ホイール（deltaY やトラックパッド deltaX）は横パンへ向ける。
+  // canvas-wrap の capture で kimetron 側のホイール（ズーム）を
+  // 抑止してから処理する。Ctrl/Cmd+ホイールはピンチズームとして通す。
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!writeModeRef.current || e.ctrlKey || e.metaKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // 送り方向 = 読み進め方向（wheel 下/トラックパッド左 = 次のページへ
+      // = ワールド x 負側が見えるよう content を右へ → viewport.x 増加）
+      engine.viewport.x += e.deltaX + e.deltaY;
+      engine.panBy(0, 0); // viewport 反映のため emit
+    };
+    el.addEventListener('wheel', onWheel, {
+      capture: true,
+      passive: false,
+    });
+    return () =>
+      el.removeEventListener('wheel', onWheel, { capture: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine]);
 
   // F24: Alt 押下でスナップ（グリッド＋オブジェクト吸着）を一時解除
   useEffect(() => {
@@ -913,7 +1044,7 @@ export function App() {
   const newDoc = () => {
     if (!window.confirm(t('confirm.new'))) return;
     const d = buildWritingDoc(docFont);
-    commitPages(d.model, d.objects);
+    commitPages(d.model, uncanon(d.objects, d.model.spec));
     setChains(d.chains);
     setWriteChainId(null);
     setFooter(true);
@@ -934,7 +1065,7 @@ export function App() {
     const u8 = packArchive({
       spec: model.spec,
       pages: model.pages,
-      objects: contentObjects(),
+      objects: canon(contentObjects()),
       chains,
       footer,
       title: docTitle,
@@ -981,7 +1112,8 @@ export function App() {
       return { ...o, group: g };
     });
     groupSeqRef.current = gn + 1;
-    commitPages(r.model, objects);
+    // 書庫のオブジェクトは正準系 'y' — 現在のモード軸へ載せ替える
+    commitPages(r.model, uncanon(objects, r.model.spec));
     setChains(r.chains);
     setWriteChainId(null);
     setFooter(r.footer);
@@ -1063,7 +1195,7 @@ export function App() {
       x: e.clientX - r.left,
       y: e.clientY - r.top,
     });
-    const onPaper = pageRects(model.spec, model.pages).some(
+    const onPaper = pageRects(model.spec, model.pages, curAxis()).some(
       (p) => w.x >= p.x && w.x < p.x + p.w && w.y >= p.y && w.y < p.y + p.h,
     );
     if (!onPaper) {
@@ -1183,7 +1315,7 @@ export function App() {
     }
     // ページ枠クリック → アクティブページを切り替える
     if (o?.kind === PAGE_KIND) {
-      const idx = pageRects(model.spec, model.pages).findIndex(
+      const idx = pageRects(model.spec, model.pages, curAxis()).findIndex(
         (p) => p.id === o.id,
       );
       if (idx >= 0) setActivePage(idx);
@@ -1380,6 +1512,18 @@ export function App() {
     setWriteMode(next);
     writeModeRef.current = next; // このハンドラ内の focusPage 判定用に先行反映
     localStorage.setItem('kusuma-mode', next ? 'write' : 'layout');
+    // 世界座標をモード軸へ載せ替える — ページは同じ slot に留まり、
+    // オブジェクトは中心のページローカル位置を保って再配置される
+    // （remapRectAxis。紙面上のオブジェクトは往復で厳密に戻る）
+    commitPages(
+      model,
+      remapAxis(
+        contentObjects(),
+        next ? 'y' : 'x',
+        next ? 'x' : 'y',
+        model.spec,
+      ),
+    );
     focusPage(curPage); // モードごとのフィット（執筆=縦 / 組版=全体）へ合わせ直す
     if (next) {
       setLinkMode(false);
@@ -1538,18 +1682,24 @@ export function App() {
     : null;
 
   // ── ページナビ: アクティブページ（枠クリック or ナビで切替） ──
-  const rects = pageRects(model.spec, model.pages);
+  const axis: StackAxis = writeMode ? 'x' : 'y';
+  const rects = pageRects(model.spec, model.pages, axis);
   const curPage = Math.min(activePage, Math.max(0, rects.length - 1));
   // G1+G2: ページが収まる倍率に調整して位置合わせする。
   // 執筆モードは用紙の縦でフィット（画面は用紙高さ基準）—
   // 横は用紙右端をキャンバス右端へ合わせる（縦書きの書き出し＝
-  // 右上の書字列が画面右へ来る配置）。組版モードは従来通り
-  // ページ全体が収まる倍率 + 左上合わせ。
+  // 右上の書字列が画面右へ来る配置）。横積みでは後のページほど
+  // 左へ延びるため、右端合わせがそのまま見開き送りになる。
+  // 組版モードは従来通りページ全体が収まる倍率 + 左上合わせ。
   const focusPage = (i: number, mdl: PageModel = model) => {
     suppressDblUntil.current = performance.now() + 700;
     setActivePage(i);
     const el = canvasRef.current;
-    const p = pageRects(mdl.spec, mdl.pages)[i];
+    const p = pageRects(
+      mdl.spec,
+      mdl.pages,
+      writeModeRef.current ? 'x' : 'y',
+    )[i];
     if (!el || !p) return;
     const pad = 30; // ルーラー帯 + 余白(px)
     const zoom = Math.min(
@@ -1637,7 +1787,8 @@ export function App() {
     )
       return;
     setGenko(g);
-    const rects = pageRects(model.spec, model.pages);
+    const ax = curAxis();
+    const rects = pageRects(model.spec, model.pages, ax);
     const eps = 0.01; // mm — refitWritingAreas と同じ許容誤差
     const objects = engine.doc.objects.map((o) => {
       if (o.kind !== TEXT_KIND) return o;
@@ -1649,7 +1800,7 @@ export function App() {
         (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
       );
       if (!hit) return o;
-      const old = genkoFrame(model.spec, hit.slot, d.genko);
+      const old = genkoFrame(model.spec, hit.slot, d.genko, ax);
       if (
         !old ||
         Math.abs(o.x - old.x) > eps ||
@@ -1658,7 +1809,7 @@ export function App() {
         Math.abs(o.h - old.h) > eps
       )
         return o;
-      const f = genkoFrame(model.spec, hit.slot, g);
+      const f = genkoFrame(model.spec, hit.slot, g, ax);
       if (!f) return o;
       return {
         ...o,
@@ -1692,10 +1843,11 @@ export function App() {
     if (fit400fs == null || !cellArea) return;
     const cx = cellArea.x + cellArea.w / 2;
     const cy = cellArea.y + cellArea.h / 2;
-    const hit = pageRects(spec, model.pages).find(
+    const ax = curAxis();
+    const hit = pageRects(spec, model.pages, ax).find(
       (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
     );
-    const f = hit ? genkoFrame(spec, hit.slot, genko) : null;
+    const f = hit ? genkoFrame(spec, hit.slot, genko, ax) : null;
     if (f) {
       patchObject(cellArea.id, { x: f.x, y: f.y, w: f.w, h: f.h });
       patchAreaData(cellArea.id, {
@@ -2258,29 +2410,39 @@ export function App() {
             onGo={goToPage}
             t={t}
           />
-          {/* N-19: 上下スクロール（ホイールパン不慣れ対策のフローティングUI） */}
+          {/* N-19: スクロール（ホイールパン不慣れ対策のフローティングUI）。
+              執筆モード（横積み・右→左）では前のページが右側にあるため
+              ▶=前へ・◀=次へ の横送りになる */}
           <div className="scroll-nav">
             <button
               title={t('scroll.up')}
               onClick={() => {
                 const el = canvasRef.current;
                 if (!el) return;
-                engine.viewport.y += el.clientHeight * 0.6;
+                if (writeModeRef.current) {
+                  engine.viewport.x -= el.clientWidth * 0.6;
+                } else {
+                  engine.viewport.y += el.clientHeight * 0.6;
+                }
                 engine.panBy(0, 0);
               }}
             >
-              ▲
+              {writeMode ? '▶' : '▲'}
             </button>
             <button
               title={t('scroll.down')}
               onClick={() => {
                 const el = canvasRef.current;
                 if (!el) return;
-                engine.viewport.y -= el.clientHeight * 0.6;
+                if (writeModeRef.current) {
+                  engine.viewport.x += el.clientWidth * 0.6;
+                } else {
+                  engine.viewport.y -= el.clientHeight * 0.6;
+                }
                 engine.panBy(0, 0);
               }}
             >
-              ▼
+              {writeMode ? '◀' : '▼'}
             </button>
           </div>
           {placing && ghost && (
@@ -2473,7 +2635,7 @@ export function App() {
           gridPrint={gridPrint}
           gridColor={gridColor}
           gridAlpha={gridAlpha}
-          objects={engine.doc.objects}
+          objects={canon(engine.doc.objects)}
           sliceRuns={(o) => {
             const c = chainOf(chains, o.id);
             if (!c) return [];

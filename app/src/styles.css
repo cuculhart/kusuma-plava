@@ -182,6 +182,14 @@ body,
   background: var(--bg);
 }
 
+/* v0.4: 執筆モードでは kimetron の5mm方眼を消す — 升目グリッドとの
+   二重表示を避ける（升目だけが見える）。組版モードはレイアウト補助
+   として残す。グリッドは .ki-canvas へ inline background-image で
+   描かれるため !important で上書きする */
+.app.mode-write .canvas-wrap .ki-canvas {
+  background-image: none !important;
+}
+
 .wires {
   position: absolute;
   inset: 0;
