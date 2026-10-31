@@ -18,7 +18,7 @@ const ja = {
   'menu.redo': 'やり直し',
   'menu.ruler': 'ルーラー',
   'menu.fit': 'ページを全体表示',
-  'menu.fitTip': 'ページ全体が収まる倍率にズーム',
+  'menu.fitTip': 'ページが収まる倍率にズーム（執筆モードは用紙の縦でフィット）',
   'menu.link': 'リンクモード',
   'menu.linkTip': '末尾→先頭の2エリアを接続',
   'menu.image': '画像を追加',
@@ -75,7 +75,7 @@ const ja = {
   'status.goalPct': '目標$1%',
   'status.hanmen': '版面 縦$1×横$2',
   'status.hanmenTip':
-    '現在の版面に収まる升目数（縦=1段の字数、横=段数）。用紙・向き・字サイズに追従',
+    '現在の執筆エリアに収まる升目数（縦=1段の字数、横=段数）。用紙・向き・字サイズに追従',
   'status.draft': '下書き $1',
   'status.draftTip': '自動保存した下書きの時刻',
   'hint.draftRestored': '下書きを復元しました',
@@ -132,7 +132,7 @@ const ja = {
   'doc.hanmenVal': '縦$1×横$2',
   'doc.fit400': '400字詰に合わせる',
   'doc.fit400Tip':
-    '字サイズを版面 縦20字×横20行（=400字/枚）に合わせます — 約$1mm（部分書式は変えません）',
+    '枠と字サイズを版面 縦20字×横20段（=400字/枚）の升目枠に合わせます — 約$1mm（部分書式は変えません）',
   'doc.opacity': '用紙の透過',
   'doc.hint': '未選択 / 複数選択 — オブジェクトを選ぶとプロパティが出ます',
   'img.title': '画像',
@@ -225,7 +225,7 @@ const en: Record<keyof typeof ja, string> = {
   'menu.redo': 'Redo',
   'menu.ruler': 'Rulers',
   'menu.fit': 'Fit page',
-  'menu.fitTip': 'Zoom to fit the whole page',
+  'menu.fitTip': 'Zoom to fit the page (writing mode fits the page height)',
   'menu.link': 'Link mode',
   'menu.linkTip': 'Connect tail → head of two areas',
   'menu.image': 'Add image',
@@ -281,7 +281,7 @@ const en: Record<keyof typeof ja, string> = {
   'status.goalPct': 'goal $1%',
   'status.hanmen': 'grid $1×$2',
   'status.hanmenTip':
-    'Genkōyōshi cells in the current text block (chars per column × columns). Follows paper, orientation, and font size',
+    'Genkōyōshi cells in the current writing area (chars per column × columns). Follows paper, orientation, and font size',
   'status.draft': 'Draft $1',
   'status.draftTip': 'Time of the autosaved draft',
   'hint.draftRestored': 'Draft restored',
@@ -335,7 +335,7 @@ const en: Record<keyof typeof ja, string> = {
   'doc.hanmenVal': '$1 × $2',
   'doc.fit400': 'Fit 400-char grid',
   'doc.fit400Tip':
-    'Fit the font size so the grid is 20 chars × 20 columns (=400 chars/sheet) — ≈$1mm (per-run marks unchanged)',
+    'Refit the frame and font size to a 20 chars × 20 columns grid (=400 chars/sheet) — ≈$1mm (per-run marks unchanged)',
   'doc.opacity': 'Paper opacity',
   'doc.hint': 'Nothing / multiple selected — select an object for properties',
   'img.title': 'Image',

@@ -819,9 +819,9 @@ function DocProps({
         <div title={t('status.hanmenTip')}>
           {t('doc.hanmen')}: {tf(t, 'doc.hanmenVal', hanmenCells.v, hanmenCells.h)}
         </div>
-        {/* v0.3: 400字詰めプリセット — 代表エリア（連鎖先頭→auto）
-            の字サイズを版面 20×20 に合わせる。升目表示と同じ
-            hanmenBox 計算で算出した mm をツールチップに出す */}
+        {/* v0.3: 400字詰めプリセット — 代表エリア（連鎖先頭→auto）を
+            縦20字×横20段の升目グリッド枠へ作り直す（枠+字サイズ）。
+            升目表示と同じ計算で算出した mm をツールチップに出す */}
         <button
           disabled={fit400fs == null}
           title={tf(

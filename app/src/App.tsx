@@ -44,6 +44,7 @@ import { loadDraft, saveDraft } from './autosave';
 import { createCanvasMeasurer } from './measure';
 import { vunitSpans, type VStyle } from './vtrender';
 import {
+  DEFAULT_FONT_FAMILY,
   DEFAULT_TEXT_DATA,
   IMG_KIND,
   LINE_HEIGHT,
@@ -52,6 +53,7 @@ import {
   PAGE_KIND,
   TEXT_KIND,
   TEXT_PAD_MM,
+  type GenkoGrid,
   type ImageData,
   type TextAreaData,
 } from './types';
@@ -101,10 +103,47 @@ function hanmenBox(spec: PaperSpec): { bw: number; bh: number } {
   };
 }
 
-/** 執筆モード既定ドキュメント（v0.2）— 第1ページの版面
-    （上下左右 HANMEN_MARGIN_MM マージン）を覆う縦書き
-    テキストエリア1枚 + それに繋がる連鎖1本。新規作成・初期起動で
-    「原稿用紙 + 執筆ペイン」の形に開く。 */
+/** 升目グリッド枠の既定 — 原稿用紙 縦20字×横20段（=400字詰） */
+const GENKO_GRID: GenkoGrid = { cells: 20, cols: 20 };
+
+/** 用紙 spec に対する升目枠の字サイズ（mm）—
+    fs = min(版面高/cells, 版面幅/(cols × 段ピッチ係数))。
+    段ピッチ = fontSize × (1 + RUBY_LANE_RATIO)。A4縦なら段ピッチが
+    拘束して fs≈5.25mm（升目内寸 105×168mm）。非有限・0以下は null。 */
+function genkoFontSize(spec: PaperSpec, g: GenkoGrid): number | null {
+  const { bw, bh } = hanmenBox(spec);
+  const fs = Math.min(bh / g.cells, bw / (g.cols * (1 + RUBY_LANE_RATIO)));
+  return Number.isFinite(fs) && fs > 0 ? fs : null;
+}
+
+/** slot ページ上の升目枠矩形 — エリア内寸をちょうど cells×cols 升にし、
+    矩形は内寸 + 四方 TEXT_PAD_MM（fit() へ渡る箱が p-2×PAD なので
+    升目割りが端数なく一致する）。ページ内で両軸中央寄せ。 */
+function genkoFrame(
+  spec: PaperSpec,
+  slot: number,
+  g: GenkoGrid,
+): { x: number; y: number; w: number; h: number; fontSize: number } | null {
+  const fs = genkoFontSize(spec, g);
+  if (fs == null) return null;
+  const p = pageRectAt(spec, slot);
+  const w = g.cols * fs * (1 + RUBY_LANE_RATIO) + 2 * TEXT_PAD_MM;
+  const h = g.cells * fs + 2 * TEXT_PAD_MM;
+  return {
+    x: p.x + (p.w - w) / 2,
+    y: p.y + (p.h - h) / 2,
+    w,
+    h,
+    fontSize: fs,
+  };
+}
+
+/** 執筆モード既定ドキュメント（v0.2）— 第1ページに縦書き
+    テキストエリア1枚 + それに繋がる連鎖1本。
+    v0.4: エリアは版面一杯ではなく 縦20字×横20段 の升目グリッド枠
+    （data.genko）— 枠はページ両軸中央寄せ、字サイズは枠がちょうど
+    20×20 になる値。新規作成・初期起動で「原稿用紙 + 執筆ペイン」の
+    形に開く。 */
 function buildWritingDoc(font: string): {
   model: PageModel;
   objects: WorldObject[];
@@ -114,25 +153,28 @@ function buildWritingDoc(font: string): {
   const p = pageRectAt(model.spec, 0);
   const m = HANMEN_MARGIN_MM;
   const areaId = 'ta1';
+  // 升目枠が組めない極端な用紙では旧来の版面ぴったりエリアへ退く
+  const f = genkoFrame(model.spec, 0, GENKO_GRID);
+  const rect = f ?? { x: p.x + m, y: p.y + m, w: p.w - 2 * m, h: p.h - 2 * m };
   return {
     model,
     objects: [
       {
         id: areaId,
         kind: TEXT_KIND,
-        x: p.x + m,
-        y: p.y + m,
-        w: p.w - 2 * m,
-        h: p.h - 2 * m,
+        ...rect,
         style: { stroke: 'rgba(90,110,140,0.4)' },
         // 既定は縦書き（v0.1 の新規エリア既定と同じ）
         data: {
           ...DEFAULT_TEXT_DATA,
           fontFamily: font,
+          fontSize: f?.fontSize ?? DEFAULT_TEXT_DATA.fontSize,
           writing: 'vertical-rl',
           // 自動生成の印 — 用紙変更時の版面追従の判別材料
           // （判定自体は版面矩形との一致で行う。refitWritingAreas 参照）
           auto: true,
+          // 升目枠の印 — 用紙変更時は枠ごと再計算して追従する
+          ...(f ? { genko: { ...GENKO_GRID } } : {}),
         },
       },
     ],
@@ -140,15 +182,19 @@ function buildWritingDoc(font: string): {
   };
 }
 
-/** 用紙 spec 変更に伴い、版面を覆うテキストエリアを新しい版面へ追従させる。
-    対象 = 旧 spec でいずれかのページ版面（HANMEN_MARGIN_MM 内側）を
-    ちょうど覆う TEXT_KIND オブジェクト。判定を data.auto の印ではなく
-    版面矩形との一致で行うのは、印のない旧 .slm 書庫・旧下書きの
-    自動生成エリアも救済するため（ユーザーが版面ぴったりに置いた
-    エリアも追従するが、これは版面エリアとして妥当な挙動とみなす）。
-    版面から外れているエリア — auto 印付きでもユーザーが動かしたもの —、
-    および画像・その他のオブジェクトは一切触れない。
-    追従先は同じページスロットの新 spec での版面矩形。 */
+/** 用紙 spec 変更に伴い、自動生成のテキストエリアを新しい用紙へ追従させる。
+    対象は2系統:
+      - data.genko 付きの升目グリッド枠 — 旧 spec で枠の中央寄せ矩形と
+        一致しているものだけ新 spec の升目枠（字サイズ・位置を再計算）
+        へ追従。枠から外れている = ユーザーが動かした/整形したものは
+        触らない。
+      - genko の無い旧来エリア — 旧 spec のいずれかのページ版面
+        （HANMEN_MARGIN_MM 内側）をちょうど覆うものは新版面矩形へ追従。
+        判定を data.auto の印ではなく版面矩形との一致で行うのは、
+        印のない旧 .slm 書庫・旧下書きの自動生成エリアも救済するため。
+    いずれの系統でも、版面/枠から外れているエリア、画像・その他の
+    オブジェクトは一切触れない。追従先は同じページスロットの新 spec での
+    矩形（属するページは升目枠は中心点、旧来は矩形一致で判定）。 */
 function refitWritingAreas(
   objects: WorldObject[],
   prev: PageModel,
@@ -159,6 +205,36 @@ function refitWritingAreas(
   const prevRects = pageRects(prev.spec, prev.pages);
   return objects.map((o) => {
     if (o.kind !== TEXT_KIND) return o;
+    const g = (o.data as TextAreaData | undefined)?.genko;
+    if (g) {
+      // 升目枠 — 属するページを中心点で判定し、旧 spec での枠矩形と
+      // 一致しているものだけ新枠へ追従（手動で動かした枠はそのまま）
+      const cx = o.x + o.w / 2;
+      const cy = o.y + o.h / 2;
+      const hit = prevRects.find(
+        (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
+      );
+      if (!hit) return o;
+      const pf = genkoFrame(prev.spec, hit.slot, g);
+      if (
+        !pf ||
+        Math.abs(o.x - pf.x) > eps ||
+        Math.abs(o.y - pf.y) > eps ||
+        Math.abs(o.w - pf.w) > eps ||
+        Math.abs(o.h - pf.h) > eps
+      )
+        return o;
+      const f = genkoFrame(next.spec, hit.slot, g);
+      if (!f) return o;
+      return {
+        ...o,
+        x: f.x,
+        y: f.y,
+        w: f.w,
+        h: f.h,
+        data: { ...(o.data as TextAreaData), fontSize: f.fontSize },
+      };
+    }
     const hit = prevRects.find(
       (r) =>
         Math.abs(o.x - (r.x + m)) <= eps &&
@@ -197,7 +273,7 @@ export function App() {
   useEngineVersion(engine);
 
   // 空ドキュメントは執筆レイアウト（版面エリア+連鎖）で開く
-  const [initDoc] = useState(() => buildWritingDoc('sans-serif'));
+  const [initDoc] = useState(() => buildWritingDoc(DEFAULT_FONT_FAMILY));
   const [model, setModel] = useState<PageModel>(() => initDoc.model);
   const [chains, setChains] = useState<Chain[]>(() => initDoc.chains);
   const [linkMode, setLinkMode] = useState(false);
@@ -246,7 +322,7 @@ export function App() {
   const createdAtRef = useRef(new Date().toISOString());
   const dirtyRef = useRef(false);
   const applyingRef = useRef(false);
-  const [docFont, setDocFont] = useState('sans-serif');
+  const [docFont, setDocFont] = useState(DEFAULT_FONT_FAMILY);
   // v0.2: 執筆/組版モード — 既定は執筆（レイアウト編集は組版で開放）。
   // localStorage 'kusuma-mode' に永続化
   const [writeMode, setWriteMode] = useState(
@@ -533,11 +609,53 @@ export function App() {
   const applySpec = (spec: PageModel['spec']) => {
     const next = setPaper(model, spec);
     commitPages(next, refitWritingAreas(contentObjects(), model, next));
+    focusPage(curPage, next);
   };
   const setSize = (size: PaperSize) => applySpec({ ...model.spec, size });
   const toggleLandscape = () =>
     applySpec({ ...model.spec, landscape: !model.spec.landscape });
-  const appendPage = () => commitPages(addPage(model));
+  const appendPage = () => {
+    const next = addPage(model);
+    const content = contentObjects();
+    // 執筆モードでは新ページにも升目グリッド枠を自動生成し、
+    // 執筆中の連鎖（未選択なら先頭連鎖 = dockChain と同じ選び方）の
+    // 末尾へ繋ぐ — あふれが次ページへそのまま流れる
+    if (writeModeRef.current) {
+      const slot = next.pages[next.pages.length - 1].slot;
+      const f = genkoFrame(next.spec, slot, GENKO_GRID);
+      if (f) {
+        const id = nextId('ta');
+        content.push({
+          id,
+          kind: TEXT_KIND,
+          x: f.x,
+          y: f.y,
+          w: f.w,
+          h: f.h,
+          style: { stroke: 'rgba(90,110,140,0.4)' },
+          data: {
+            ...DEFAULT_TEXT_DATA,
+            fontFamily: docFont,
+            fontSize: f.fontSize,
+            writing: 'vertical-rl',
+            auto: true,
+            genko: { ...GENKO_GRID },
+          } satisfies TextAreaData,
+        });
+        const target =
+          chainsRef.current.find((c) => c.id === writeChainId) ??
+          chainsRef.current[0];
+        if (target) {
+          setChains((cs) =>
+            cs.map((c) =>
+              c.id === target.id ? { ...c, areas: [...c.areas, id] } : c,
+            ),
+          );
+        }
+      }
+    }
+    commitPages(next, content);
+  };
   const removePage = (id: string) => commitPages(deletePage(model, id));
   const insertAt = (index: number) => {
     const res = insertPage(model, index);
@@ -656,7 +774,7 @@ export function App() {
           footer: true,
           title: '',
           pageOpacity: 50,
-          docFont: 'sans-serif',
+          docFont: DEFAULT_FONT_FAMILY,
           pageNum: false,
           gridPrint: true,
         };
@@ -668,7 +786,7 @@ export function App() {
           footer: r.footer,
           title: r.title,
           pageOpacity: r.pageOpacity,
-          docFont: r.docFont ?? 'sans-serif',
+          docFont: r.docFont ?? DEFAULT_FONT_FAMILY,
           pageNum: r.pageNum,
           gridPrint: r.gridPrint,
         };
@@ -768,7 +886,7 @@ export function App() {
     setFooter(true);
     setDocTitle('');
     setPageOpacity(50);
-    setDocFont('sans-serif');
+    setDocFont(DEFAULT_FONT_FAMILY);
     setPageNum(false);
     setGridPrint(true);
     createdAtRef.current = new Date().toISOString();
@@ -830,7 +948,7 @@ export function App() {
     setFooter(r.footer);
     setDocTitle(r.title);
     setPageOpacity(r.pageOpacity);
-    setDocFont(r.docFont ?? 'sans-serif');
+    setDocFont(r.docFont ?? DEFAULT_FONT_FAMILY);
     setPageNum(r.pageNum);
     setGridPrint(r.gridPrint);
     createdAtRef.current = r.createdAt || new Date().toISOString();
@@ -1216,7 +1334,9 @@ export function App() {
   const onToggleMode = () => {
     const next = !writeMode;
     setWriteMode(next);
+    writeModeRef.current = next; // このハンドラ内の focusPage 判定用に先行反映
     localStorage.setItem('kusuma-mode', next ? 'write' : 'layout');
+    focusPage(curPage); // モードごとのフィット（執筆=縦 / 組版=全体）へ合わせ直す
     if (next) {
       setLinkMode(false);
       setLinkFrom(null);
@@ -1376,8 +1496,10 @@ export function App() {
   // ── ページナビ: アクティブページ（枠クリック or ナビで切替） ──
   const rects = pageRects(model.spec, model.pages);
   const curPage = Math.min(activePage, Math.max(0, rects.length - 1));
-  // G1+G2: ページ全体が収まる倍率に調整し、ページ左上（ルーラー原点）を
-  // キャンバス左上（ルーラー帯分の余白込み）に合わせる
+  // G1+G2: ページが収まる倍率に調整して位置合わせする。
+  // 執筆モードは用紙の縦でフィット（画面は用紙高さ基準）—
+  // 横は収まる範囲で中央寄せ、はみ出る大判は左上合わせ。
+  // 組版モードは従来通りページ全体が収まる倍率 + 左上合わせ。
   const focusPage = (i: number, mdl: PageModel = model) => {
     suppressDblUntil.current = performance.now() + 700;
     setActivePage(i);
@@ -1389,17 +1511,21 @@ export function App() {
       4,
       Math.max(
         0.1,
-        Math.min(
-          (el.clientWidth - pad * 2) / (p.w * MM_PX),
-          (el.clientHeight - pad * 2) / (p.h * MM_PX),
-        ),
+        writeModeRef.current
+          ? (el.clientHeight - pad * 2) / (p.h * MM_PX)
+          : Math.min(
+              (el.clientWidth - pad * 2) / (p.w * MM_PX),
+              (el.clientHeight - pad * 2) / (p.h * MM_PX),
+            ),
       ),
     );
     const u = MM_PX * zoom;
     engine.viewport = {
       ...engine.viewport,
       zoom,
-      x: pad - p.x * u,
+      x: writeModeRef.current
+        ? Math.max(pad, (el.clientWidth - p.w * u) / 2) - p.x * u
+        : pad - p.x * u,
       y: pad - p.y * u,
     };
     engine.panBy(0, 0); // viewport 反映のため emit を起こす
@@ -1428,13 +1554,22 @@ export function App() {
   const cellFs = cellArea
     ? { ...DEFAULT_TEXT_DATA, ...(cellArea.data as TextAreaData) }.fontSize
     : DEFAULT_TEXT_DATA.fontSize;
-  // fitVertical に渡る実効ボックスと同じ内寸で割る — 版面矩形
-  // （用紙 − HANMEN_MARGIN_MM 四方）からエリア内側余白 TEXT_PAD_MM を
-  // 引いた幅・高さ（hanmenBox 参照）。段ピッチ =
-  // fontSize × (1 + RUBY_LANE_RATIO)。
+  // v0.4: エリア実測の内寸で割る（版面全体ではなく枠そのものの升目）。
+  // 内寸 = 矩形 − 四方 TEXT_PAD_MM（fitVertical に渡る箱と同じ）。
+  // 段ピッチ = fontSize × (1 + RUBY_LANE_RATIO)。
   const hanmenCells = (() => {
-    const { bw, bh } = hanmenBox(spec);
     const pitch = cellFs * (1 + RUBY_LANE_RATIO);
+    if (cellArea) {
+      const r = liveRect(engine, cellArea);
+      const iw = Math.max(0, r.w - 2 * TEXT_PAD_MM);
+      const ih = Math.max(0, r.h - 2 * TEXT_PAD_MM);
+      return {
+        v: Math.max(0, Math.floor((ih + 1e-6) / cellFs)),
+        h: Math.max(0, Math.floor((iw + 1e-6) / pitch)),
+      };
+    }
+    // エリア無し — 版面全体の仮想升目（旧表示）
+    const { bw, bh } = hanmenBox(spec);
     return {
       v: Math.max(0, Math.floor((bh + 1e-6) / cellFs)),
       h: Math.max(0, Math.floor((bw + 1e-6) / pitch)),
@@ -1442,23 +1577,36 @@ export function App() {
   })();
 
   // ── v0.3: 「400字詰め」プリセット ──
-  // 升目が 縦20字×横20行（=400字/枚）に収まる字サイズ
+  // 升目枠の字サイズ（genkoFontSize と同じ計算）:
   //   fs = min(版面高/20, 版面幅/(20×(1+RUBY_LANE_RATIO)))
-  // min なので拘束する次元がちょうど20、もう一方は20以上を保証
-  // （A4縦なら段ピッチが効いて fs≈5.25mm → 縦48×横20）。極端な値
-  // （小さな用紙で <1mm 等）もそのまま適用する — 0以下・非有限のみ
-  // 抑止。適用先は升目計算と同じ代表エリア（連鎖先頭 → data.auto
-  // 順の cellArea）。部分書式の fontSize マークは触らずエリア既定の
-  // み更新 — Inspector サイズ欄と同じ patchAreaData 経路で
-  // 再レイアウトされる。
-  const fit400fs = (() => {
-    const { bw, bh } = hanmenBox(spec);
-    const fs = Math.min(bh / 20, bw / (20 * (1 + RUBY_LANE_RATIO)));
-    return Number.isFinite(fs) && fs > 0 ? fs : null;
-  })();
+  // min なので拘束する次元がちょうど20、もう一方は20以下に収まる
+  // （A4縦なら段ピッチが効いて fs≈5.25mm → 枠内寸 105×168mm）。
+  // 極端な値（小さな用紙で <1mm 等）もそのまま適用する —
+  // 0以下・非有限のみ抑止。適用先は升目計算と同じ代表エリア
+  // （連鎖先頭 → data.auto 順の cellArea）。
+  // v0.4: 字サイズだけでなく枠そのものを 20×20 升の中央寄せ矩形へ
+  // 作り直し、data.genko を立てる（以後は用紙変更へ枠ごと追従）。
+  // エリアが用紙上に無い等で枠を組めない時は字サイズのみ合わせる
+  // 旧挙動へ退く。部分書式の fontSize マークは触らずエリア既定のみ
+  // 更新 — Inspector サイズ欄と同じ patchAreaData 経路で再レイアウト。
+  const fit400fs = genkoFontSize(spec, GENKO_GRID);
   const fit400 = () => {
     if (fit400fs == null || !cellArea) return;
-    patchAreaData(cellArea.id, { fontSize: fit400fs });
+    const cx = cellArea.x + cellArea.w / 2;
+    const cy = cellArea.y + cellArea.h / 2;
+    const hit = pageRects(spec, model.pages).find(
+      (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
+    );
+    const f = hit ? genkoFrame(spec, hit.slot, GENKO_GRID) : null;
+    if (f) {
+      patchObject(cellArea.id, { x: f.x, y: f.y, w: f.w, h: f.h });
+      patchAreaData(cellArea.id, {
+        fontSize: f.fontSize,
+        genko: { ...GENKO_GRID },
+      });
+    } else {
+      patchAreaData(cellArea.id, { fontSize: fit400fs });
+    }
   };
 
   const renderObject = (o: WorldObject) => {

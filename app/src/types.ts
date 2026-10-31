@@ -23,6 +23,12 @@ export const TEXT_PAD_MM = 1;
 /** 行高さ係数（fontSize に対する倍率）— 計測・描画で共用 */
 export const LINE_HEIGHT = 1.4;
 
+/** 升目グリッド枠の升目数 — cells = 1段の字数（縦）、cols = 段数（横） */
+export interface GenkoGrid {
+  cells: number;
+  cols: number;
+}
+
 export interface TextAreaData {
   /** フォントサイズ（mm） */
   fontSize: number;
@@ -46,16 +52,26 @@ export interface TextAreaData {
       用紙変更時の追従判定自体は版面との矩形一致で行う — App.tsx の
       refitWritingAreas 参照。ユーザーが手で作ったエリアには付かない） */
   auto?: boolean;
+  /** 升目グリッド枠の印 — buildWritingDoc/400字詰プリセットが生成する
+      cells×cols の原稿用紙枠。枠の内寸はちょうど升目分で、用紙変更時に
+      字サイズ・中央寄せ位置を再計算して追従する（refitWritingAreas 参照） */
+  genko?: GenkoGrid;
 }
+
+/** アプリ既定フォント — Noto Serif JP 優先、無い環境は OS の明朝系へ落ちる
+    （CSS フォントスタックとして保存・計測・印刷でそのまま使う） */
+export const DEFAULT_FONT_FAMILY =
+  "'Noto Serif JP', 'Yu Mincho', 'Hiragino Mincho ProN', serif";
 
 export const DEFAULT_TEXT_DATA: TextAreaData = {
   fontSize: 4,
-  fontFamily: 'sans-serif',
+  fontFamily: DEFAULT_FONT_FAMILY,
   color: '#222222',
 };
 
 export const FONT_SIZES_MM = [3, 4, 5, 7, 9];
 export const FONT_FAMILIES = [
+  { value: "'Noto Serif JP'", label: 'Noto Serif JP' },
   { value: 'sans-serif', label: 'Sans-serif' },
   { value: 'serif', label: 'Serif' },
   { value: 'monospace', label: 'Monospace' },
