@@ -24,9 +24,9 @@ export interface AreaBox {
   italic?: boolean;
   /** 組方向。'vertical-rl' で縦書き（段は右→左へ流れる） */
   writing?: WritingMode;
-  /** 回しこみ障害物（mm・エリアローカル座標）。
-      TODO(v0.3): 計測側での空き区間計算は未実装。
-      spike/runaround.html で方式は検証済み — フィールドのみ予約 */
+  /** 回しこみ障害物（mm・エリア内寸ローカル座標）。縦書きの
+      fitVertical/layoutVertical が段ごとの自由区間計算に使う
+      （spike/runaround.html の方式 — 外接矩形のみ、輪郭追従はしない） */
   obstacles?: { x: number; y: number; w: number; h: number }[];
   /** 部分装飾マーク（chain.text 基準の座標）— layoutChain が設定 */
   marks?: TextMark[];

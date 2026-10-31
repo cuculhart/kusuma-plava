@@ -15,6 +15,7 @@ import {
   insertArea,
   insertPage,
   layoutChain,
+  layoutVertical,
   linkChains,
   normalizeRuby,
   paperDims,
@@ -27,6 +28,7 @@ import {
   sliceRuns,
   tokenizeVertical,
   unlinkAt,
+  type AreaBox,
   type Chain,
   type LayoutResult,
   type PageModel,
@@ -34,6 +36,7 @@ import {
   type PaperSpec,
   type StackAxis,
   type TextAttrs,
+  type VFlow,
 } from 'inimbal';
 import { RightDock } from './Inspector';
 import { LinkWires, type LinkSel } from './LinkWires';
@@ -86,6 +89,35 @@ function pageObjects(
     style: { fill: `rgba(255,255,255,${opacity})` },
     data: { index: r.index },
   }));
+}
+
+/** 回しこみ対象のオブジェクト kind — 重なる rect/ellipse/image は
+    外接矩形として障害になる（輪郭追従はしない。v0.4 の割り切り）。
+    他のテキストエリア・線/曲線・ページ枠は障害に含めない */
+const OBSTACLE_KINDS = new Set(['rect', 'ellipse', IMG_KIND]);
+
+/** テキストエリアと重なる障害矩形を、エリア内寸ローカル mm で返す。
+    内寸 = オブジェクト矩形 − 四方 TEXT_PAD_MM（fitVertical に渡る箱と
+    同じ座標系）。liveRect 経由なのでドラッグ/リサイズ中も追従し、
+    移動のたびに回しこみが再配分される。 */
+function areaObstacles(
+  engine: Engine,
+  self: WorldObject,
+): { x: number; y: number; w: number; h: number }[] | undefined {
+  const r = liveRect(engine, self);
+  const ix = r.x + TEXT_PAD_MM;
+  const iy = r.y + TEXT_PAD_MM;
+  const iw = Math.max(0, r.w - 2 * TEXT_PAD_MM);
+  const ih = Math.max(0, r.h - 2 * TEXT_PAD_MM);
+  const out: { x: number; y: number; w: number; h: number }[] = [];
+  for (const o of engine.doc.objects) {
+    if (o.id === self.id || !OBSTACLE_KINDS.has(o.kind)) continue;
+    const q = liveRect(engine, o);
+    if (q.x >= ix + iw || q.x + q.w <= ix || q.y >= iy + ih || q.y + q.h <= iy)
+      continue;
+    out.push({ x: q.x - ix, y: q.y - iy, w: q.w, h: q.h });
+  }
+  return out.length ? out : undefined;
 }
 
 /** ページの辺・中心をドラッグ/リサイズのスナップ対象へ登録する */
@@ -1639,29 +1671,50 @@ export function App() {
   // ── 連鎖レイアウト（再描画のたびに貪欲配分） ──
   const objById = new Map(engine.doc.objects.map((o) => [o.id, o]));
   const layouts = new Map<string, LayoutResult>();
+  // v0.4: 回しこみ — 障害のある縦書きエリアは layoutVertical の
+  // 段×区間割当計画を保持し、描画は計画どおり区間を絶対配置する
+  // （CSS writing-mode には障害を教えられないため — 案B。
+  // 障害無しのスライスは従来どおり CSS 折返しで描く）
+  const vflows = new Map<string, VFlow>();
   for (const c of chains) {
-    const boxes = c.areas.flatMap((id) => {
+    const boxes: AreaBox[] = [];
+    const boxById = new Map<string, AreaBox>();
+    for (const id of c.areas) {
       const o = objById.get(id);
-      if (!o) return [];
+      if (!o) continue;
       const r = liveRect(engine, o);
       const d = { ...DEFAULT_TEXT_DATA, ...(o.data as TextAreaData) };
-      return [
-        {
-          id,
-          width: Math.max(0, r.w - 2 * TEXT_PAD_MM),
-          height: Math.max(0, r.h - 2 * TEXT_PAD_MM),
-          fontSize: d.fontSize,
-          fontFamily: d.fontFamily,
-          bold: d.bold,
-          italic: d.italic,
-          writing: d.writing,
-        },
-      ];
-    });
-    layouts.set(
-      c.id,
-      layoutChain(c.text, boxes, measurerRef.current, c.marks),
-    );
+      const box: AreaBox = {
+        id,
+        width: Math.max(0, r.w - 2 * TEXT_PAD_MM),
+        height: Math.max(0, r.h - 2 * TEXT_PAD_MM),
+        fontSize: d.fontSize,
+        fontFamily: d.fontFamily,
+        bold: d.bold,
+        italic: d.italic,
+        writing: d.writing,
+        ...(d.writing === 'vertical-rl'
+          ? { obstacles: areaObstacles(engine, o) }
+          : {}),
+      };
+      boxes.push(box);
+      boxById.set(id, box);
+    }
+    const lr = layoutChain(c.text, boxes, measurerRef.current, c.marks);
+    layouts.set(c.id, lr);
+    for (const sl of lr.slices) {
+      const b = boxById.get(sl.areaId);
+      if (b?.writing === 'vertical-rl' && b.obstacles?.length) {
+        vflows.set(
+          sl.areaId,
+          layoutVertical(sl.text, {
+            ...b,
+            marks: c.marks,
+            textOffset: sl.offset,
+          }),
+        );
+      }
+    }
   }
 
   // 右ペインの駆動源（選択オブジェクト配列）
@@ -1924,6 +1977,9 @@ export function App() {
       // 計測と描画を一致させる）。ラン境界にまたがる単位は先頭ランの
       // 装飾に寄せる（v0.1 の簡約 — ルビを分断しないため）
       const units = vertical ? tokenizeVertical(sl?.text ?? '') : null;
+      // v0.4: 障害のある縦書きスライスは段×区間計画で絶対配置する。
+      // units の区間割当は計画の u0/u1 が指す（同じトークン化列）
+      const vflow = vertical ? vflows.get(o.id) : undefined;
       const rbs = (() => {
         if (!vertical) return null;
         let a = 0;
@@ -2002,7 +2058,22 @@ export function App() {
             }
           >
             {vertical
-              ? vunitSpans(units!, vStyleOf)
+              ? vflow
+                ? vflow.segs.map((s, i) => (
+                    <div
+                      key={i}
+                      className="vseg"
+                      style={{
+                        top: s.y * MM_PX * z,
+                        height: s.h * MM_PX * z,
+                        right: s.col * vflow.pitch * MM_PX * z,
+                        width: vflow.pitch * MM_PX * z,
+                      }}
+                    >
+                      {vunitSpans(units!.slice(s.u0, s.u1), vStyleOf)}
+                    </div>
+                  ))
+                : vunitSpans(units!, vStyleOf)
               : runs.map((r, i) => (
                   <span
                     key={i}
@@ -2657,6 +2728,7 @@ export function App() {
             const c = chainOf(chains, o.id);
             return !c || c.areas.length === 1;
           }}
+          vflowFor={(o) => vflows.get(o.id) ?? null}
           onPrint={() => window.print()}
           onClose={() => setPrinting(false)}
           t={t}

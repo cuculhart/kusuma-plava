@@ -362,6 +362,8 @@ body,
   overflow: hidden;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  /* v0.4: 回しこみ区間（.vseg）の絶対配置基準 — 内寸ボックス原点 */
+  position: relative;
 }
 
 /* ── 縦書きスライス: vertical-rl + 原稿用紙の升目 ──
@@ -452,6 +454,19 @@ body,
 .parea.vt .vr {
   display: inline-block;
   text-align: center;
+}
+
+/* v0.4: 回しこみ — layoutVertical の区間計画どおりに段区間を絶対配置。
+   CSS の自由折返しには障害を教えられないため、障害のあるスライスは
+   fit() の分割結果をそのまま描く（案B）。区間内は vertical-rl なので
+   組版単位クラス（.vc/.vr/.tcy/.rc）とルビ欄はそのまま効く。
+   計画量を超える折返し・はみ出しは clip。 */
+.ta-slice.vt .vseg,
+.parea.vt .vseg {
+  position: absolute;
+  writing-mode: vertical-rl;
+  line-height: var(--pitch);
+  overflow: hidden;
 }
 
 .oflabel {

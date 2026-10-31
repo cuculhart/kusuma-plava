@@ -14,6 +14,7 @@ import {
   tokenizeVertical,
   type PageModel,
   type TextRun,
+  type VFlow,
 } from 'inimbal';
 import {
   DEFAULT_TEXT_DATA,
@@ -46,6 +47,7 @@ export function Printout({
   objects,
   sliceRuns,
   areaAlone,
+  vflowFor,
   onPrint,
   onClose,
   t,
@@ -64,6 +66,9 @@ export function Printout({
   sliceRuns: (o: WorldObject) => TextRun[];
   /** 単独（非連鎖）テキストエリアか — 揃えは単独のみ有効 */
   areaAlone: (o: WorldObject) => boolean;
+  /** v0.4: 回しこみ — 障害のある縦書きスライスの段×区間計画。
+      非 null のとき段区間を絶対配置で描く（編集画面と同じ分割） */
+  vflowFor: (o: WorldObject) => VFlow | null;
   onPrint: () => void;
   onClose: () => void;
   t: (key: string) => string;
@@ -227,6 +232,12 @@ export function Printout({
                 // 縦書き: runs はスライスの厳密な分割なので join で
                 // 原文が戻り、fitVertical と同じ分割へトークン化できる。
                 // ラン境界にまたがる単位は先頭ランの装飾に寄せる（v0.1 簡約）
+                // v0.4: 障害のあるスライスは段×区間計画で絶対配置 —
+                // units の区間割当は計画の u0/u1 が指す
+                const vflow = vertical ? vflowFor(o) : null;
+                const units = vertical
+                  ? tokenizeVertical(runs.map((r) => r.text).join(''))
+                  : null;
                 const rbs = (() => {
                   let a = 0;
                   return runs.map((r) => {
@@ -305,10 +316,28 @@ export function Printout({
                     }}
                   >
                     {vertical
-                      ? vunitSpans(
-                          tokenizeVertical(runs.map((r) => r.text).join('')),
-                          vStyleOf,
-                        )
+                      ? vflow
+                        ? vflow.segs.map((s, i) => (
+                            <div
+                              key={i}
+                              className="vseg"
+                              style={{
+                                // .parea は position:absolute — 絶対配置の
+                                // 基準は padding box なので内側余白ぶん
+                                // TEXT_PAD を足して内容箱ローカルへ揃える
+                                top: `${TEXT_PAD_MM + s.y}mm`,
+                                height: `${s.h}mm`,
+                                right: `${TEXT_PAD_MM + s.col * vflow.pitch}mm`,
+                                width: `${vflow.pitch}mm`,
+                              }}
+                            >
+                              {vunitSpans(
+                                units!.slice(s.u0, s.u1),
+                                vStyleOf,
+                              )}
+                            </div>
+                          ))
+                        : vunitSpans(units!, vStyleOf)
                       : runs.map((r, i) => {
                       const span = (
                         <span

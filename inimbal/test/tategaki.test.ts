@@ -3,6 +3,7 @@ import {
   fitVertical,
   isEndKinsoku,
   isHeadKinsoku,
+  layoutVertical,
   RUBY_LANE_RATIO,
   tokenizeVertical,
 } from '../src/tategaki';
@@ -128,6 +129,111 @@ describe('fitVertical — 禁則の境界調整（最大2単位前倒し）', ()
     expect(isHeadKinsoku('っ')).toBe(true);
     // col0=あいうえ(4) / col1=おっかきく(5) → 9字
     expect(fitVertical('あいうえおっかきく', two())).toBe(9);
+  });
+});
+
+describe('layoutVertical — 回しこみ（障害物と段内分割）', () => {
+  // fs=4mm → pitch 6.4mm × 2段、cap 10セル（40mm）
+  const two = () => box(12.8, 40);
+
+  it('障害無しは段全体1区間 — fitVertical と同じ収容数', () => {
+    const f = layoutVertical('あ'.repeat(25), two());
+    expect(f.chars).toBe(20);
+    expect(f.segs).toEqual([
+      { col: 0, y: 0, h: 40, u0: 0, u1: 10 },
+      { col: 1, y: 0, h: 40, u0: 10, u1: 20 },
+    ]);
+    expect(f.pitch).toBeCloseTo(6.4);
+  });
+
+  it('段を横切る障害は段を上下2区間に分ける（段内分割）', () => {
+    // col0 = x [6.4,12.8) — 障害 (x:8,y:12,w:4,h:12) ⊂ col0 のみ
+    // 上区間 [0,12)=3セル、下区間 [24,40)=4セル → col0 に 7字、col1 に 10字
+    const b = { ...two(), obstacles: [{ x: 8, y: 12, w: 4, h: 12 }] };
+    expect(fitVertical('あ'.repeat(20), b)).toBe(17);
+    const f = layoutVertical('あ'.repeat(20), b);
+    expect(f.chars).toBe(17);
+    expect(f.segs).toEqual([
+      { col: 0, y: 0, h: 12, u0: 0, u1: 3 },
+      { col: 0, y: 24, h: 16, u0: 3, u1: 7 },
+      { col: 1, y: 0, h: 40, u0: 7, u1: 17 },
+    ]);
+  });
+
+  it('障害の縦端はセル境界へスナップ — 自由区間側へ丸める', () => {
+    // y:13 → floor→12、y+h:25 → ceil→28 → [0,12)=3c + [28,40)=3c
+    const b = { ...two(), obstacles: [{ x: 8, y: 13, w: 4, h: 12 }] };
+    const f = layoutVertical('あ'.repeat(20), b);
+    expect(f.chars).toBe(16); // 3+3+10
+    expect(f.segs[0]).toMatchObject({ col: 0, y: 0, h: 12 });
+    expect(f.segs[1]).toMatchObject({ col: 0, y: 28, h: 12 });
+  });
+
+  it('段全体を覆う障害は段をまるごと消費する', () => {
+    const b = { ...two(), obstacles: [{ x: 8, y: 0, w: 4, h: 40 }] };
+    expect(fitVertical('あ'.repeat(20), b)).toBe(10);
+    const f = layoutVertical('あ'.repeat(20), b);
+    expect(f.segs).toEqual([{ col: 1, y: 0, h: 40, u0: 0, u1: 10 }]);
+  });
+
+  it('x が交差しない障害はその段へ効かない', () => {
+    // col1 = x [0,6.4) — 障害 (x:8,…) は col0 のみへ効く
+    const b = { ...two(), obstacles: [{ x: 8, y: 0, w: 4, h: 20 }] };
+    const f = layoutVertical('あ'.repeat(20), b);
+    // col0: [20,40)=5c、col1: 10c → 15字
+    expect(f.chars).toBe(15);
+    expect(f.segs).toEqual([
+      { col: 0, y: 20, h: 20, u0: 0, u1: 5 },
+      { col: 1, y: 0, h: 40, u0: 5, u1: 15 },
+    ]);
+  });
+
+  it('\\n は段送り — 段内の残り区間（障害下）も使わず次段へ', () => {
+    const b = { ...two(), obstacles: [{ x: 8, y: 12, w: 4, h: 12 }] };
+    // col0 上区間(3c)に あああ、\n で下区間を捨てて col1 へ
+    const f = layoutVertical('あああ\nいいいい', b);
+    expect(f.chars).toBe(8); // 3 + \n + 4
+    expect(f.segs).toEqual([
+      { col: 0, y: 0, h: 12, u0: 0, u1: 3 },
+      { col: 1, y: 0, h: 40, u0: 4, u1: 8 },
+    ]);
+  });
+
+  it('区間端でも禁則調整 — 句点を区間頭にしないよう前倒し', () => {
+    // 1段 box（pitch 6.4mm）cap 10セル、障害で上区間 [0,12)=3c・下 [24,40)=4c
+    const b = {
+      ...box(6.4, 40),
+      obstacles: [{ x: 0, y: 12, w: 6.4, h: 12 }],
+    };
+    // 上区間が「あああ」で満杯・次が「。」→ 「お」相当の1単位前倒し
+    const f = layoutVertical('あああ。いいいいいいい', b);
+    expect(f.chars).toBe(6); // 2 + 4（前倒しで上区間は ああ のみ）
+    expect(f.segs).toEqual([
+      { col: 0, y: 0, h: 12, u0: 0, u1: 2 },
+      { col: 0, y: 24, h: 16, u0: 2, u1: 6 },
+    ]);
+  });
+
+  it('エリア外にはみ出す障害は内寸へクランプして効く', () => {
+    // 障害がエリア上端より上まで伸びる（y<0 を含む）→ 上区間なし、下だけ
+    // x [8,12) ⊂ col0 — col1 には効かない
+    const b = { ...two(), obstacles: [{ x: 8, y: -5, w: 4, h: 25 }] };
+    const f = layoutVertical('あ'.repeat(20), b);
+    // col0: bot=ceil(20/4)*4=20 → [20,40)=5c、col1: x 不対象 → 10c
+    expect(f.chars).toBe(15);
+    expect(f.segs[0]).toMatchObject({ col: 0, y: 20, h: 20 });
+  });
+
+  it('units の区間割当が原文を厳密に分割する（欠落・重複なし）', () => {
+    const text = '春《はる》の夜(-よ-)にABと咲く。\n夢の浮橋';
+    const b = { ...two(), obstacles: [{ x: 8, y: 8, w: 4, h: 16 }] };
+    const f = layoutVertical(text, b);
+    const units = tokenizeVertical(text);
+    const placed = f.segs.flatMap((s) => units.slice(s.u0, s.u1));
+    // 配置単位は消費範囲から brk を除いたもの — chars は brk の raw も含む
+    const rawSum = (us: typeof units) => us.reduce((n, x) => n + x.raw, 0);
+    expect(rawSum(placed) + 1).toBe(f.chars); // +1 = \n 分
+    expect(placed.every((x) => x.kind !== 'brk')).toBe(true);
   });
 });
 

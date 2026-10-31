@@ -10,6 +10,8 @@
 //   - 半角英数ランは ≤4字なら縦中横で1セル、それ以外は1字1セル
 //   - 禁則は境界調整のみ: 分割点で次単位が行頭禁則・現単位が行末禁則なら
 //     最大2単位前倒し（実務ルール — 計測ではなく境界ルール）
+//   - box.obstacles = 回しこみ障害（エリアローカル mm）— 交差する段は
+//     縦範囲をセル境界へスナップして除き、上下両区間へ配分（段内分割）
 
 import { sliceRuns, type AreaBox, type TextAttrs } from './chain';
 
@@ -165,21 +167,52 @@ export const isHeadKinsoku = (ch: string) => HEAD_KINSOKU.has(ch);
 /** 段末に来られない字か（行末禁則） */
 export const isEndKinsoku = (ch: string) => END_KINSOKU.has(ch);
 
+/** 縦版レイアウトの配置区間 — 1段内の自由区間と、そこへ割り当てた
+    組版単位の範囲（回しこみの段内分割で1段が複数区間を持ち得る）。 */
+export interface VSeg {
+  /** 段 index（右端=0、段ピッチ幅ずつ左へ進む） */
+  col: number;
+  /** 区間の上端（エリア内寸ローカル mm。セル境界スナップ済） */
+  y: number;
+  /** 区間の高さ（mm） */
+  h: number;
+  /** この区間へ入る組版単位の範囲 — tokenizeVertical(text) の [u0, u1) */
+  u0: number;
+  u1: number;
+}
+
+/** layoutVertical() の返り値 — 段×区間への単位割当計画（案B: fit が
+    分割位置を返し、描画側がその通り区間を絶対配置する方式。
+    CSS writing-mode の自由折返しには障害を教えられないため、
+    計測と描画の一致は計画の受け渡しで保証する） */
+export interface VFlow {
+  /** 段ピッチ（mm）= fontSize × (1 + RUBY_LANE_RATIO) */
+  pitch: number;
+  /** 収容できた接頭辞の文字数（fitVertical の返り値と同じ） */
+  chars: number;
+  /** 配置区間（組版順 — 段昇順・段内は上から下へ） */
+  segs: VSeg[];
+}
+
 /**
- * 縦版 fit() — text を box へ流し込み、収まる接頭辞の文字数を返す。
- * 単位カウント方式で measureText 不要: 1単位 = そのランの fontSize 分だけ
- * 段を下へ進み、段はピッチ幅ずつ右から左へ消費する。
- * box.writing が 'vertical-rl' でない場合の呼出は想定外（横版を使うこと）。
+ * 縦版レイアウト計画 — text を box へ流し込み、段×自由区間への
+ * 単位割当を返す。単位カウント方式で measureText 不要:
+ * 1単位 = そのランの fontSize 分だけ区間を下へ進み、段はピッチ幅ずつ
+ * 右から左へ消費する。\n = 段送り（段の残り区間は使わない）。
+ *
+ * box.obstacles（エリア内寸ローカル mm）と x 区間が交差する段は、
+ * 障害の縦範囲をセル境界へスナップして除いた自由区間へ配分する
+ * — 障害の上・下両区間を使う段内分割（spike/runaround.html 検証済）。
+ * 区間端でも禁則の境界調整が働く（前倒しは当該区間の範囲内に留める）。
+ * 障害が無いとき各区間は段全体 — fitVertical の従来挙動と同一。
  */
-export function fitVertical(text: string, box: AreaBox): number {
+export function layoutVertical(text: string, box: AreaBox): VFlow {
   const baseFs = box.fontSize ?? 4;
   const pitch = baseFs * (1 + RUBY_LANE_RATIO);
   const cols = Math.floor((box.width + 1e-6) / pitch);
   const cap = Math.floor((box.height + 1e-6) / baseFs) * baseFs; // 段の収容高（mm）
-  if (cols <= 0 || cap <= 0) return 0;
-
-  // TODO(v0.3): box.obstacles — 段ごとの障害矩形交差で空き区間を計算する
-  //   回しこみ。フィールドは AreaBox に予約済み（spike/runaround.html 参照）。
+  const flow: VFlow = { pitch, chars: 0, segs: [] };
+  if (cols <= 0 || cap <= 0) return flow;
 
   // 部分装飾によるラン別 fontSize — marks は chain 座標なので textOffset で変換
   const base: TextAttrs = {
@@ -207,53 +240,93 @@ export function fitVertical(text: string, box: AreaBox): number {
   const units = tokenizeVertical(text);
   const unitH = (u: VUnit) => u.cells * fsAt(u.start);
 
+  // 段（右から col 番目 = x 区間 [width-(col+1)pitch, width-col·pitch)）の
+  // 自由縦区間。x が重なる障害矩形は縦範囲を切り抜く — 上端は floor・
+  // 下端は ceil のセル境界スナップで自由区間側へ丸める。
+  const obstacles = box.obstacles ?? [];
+  const freeIntervals = (col: number): { y: number; h: number }[] => {
+    let iv = [{ y: 0, h: cap }];
+    if (!obstacles.length) return iv;
+    const xR = box.width - col * pitch;
+    const xL = xR - pitch;
+    for (const o of obstacles) {
+      if (!(o.x < xR && o.x + o.w > xL)) continue;
+      const top = Math.floor(o.y / baseFs) * baseFs;
+      const bot = Math.ceil((o.y + o.h) / baseFs) * baseFs;
+      const next: { y: number; h: number }[] = [];
+      for (const s of iv) {
+        const e = s.y + s.h;
+        if (top >= e || bot <= s.y) {
+          next.push(s);
+          continue;
+        }
+        if (top > s.y) next.push({ y: s.y, h: Math.min(top, e) - s.y });
+        if (bot < e)
+          next.push({ y: Math.max(bot, s.y), h: e - Math.max(bot, s.y) });
+      }
+      iv = next;
+    }
+    return iv.filter((s) => s.h > 1e-9);
+  };
+
   let u = 0;
-  let col = 0;
-  let used = 0;
-  let colStart = 0; // 現段の先頭単位 index（禁則の前倒し範囲）
-  while (u < units.length && col < cols) {
-    const un = units[u];
-    if (un.kind === 'brk') {
-      // \n = 段送り — 段を1つ消費して次段へ
-      u++;
-      col++;
-      used = 0;
-      colStart = u;
-      continue;
-    }
-    const h = unitH(un);
-    if (used + h <= cap + 1e-9) {
-      used += h;
-      u++;
-      continue;
-    }
-    if (used === 0) {
-      // 空段にも収まらない単位（巨大字等）は強制配置して段を進める
-      u++;
-      col++;
-      used = 0;
-      colStart = u;
-      continue;
-    }
-    // 段が満杯 → 禁則の境界調整。次単位が行頭禁則または現単位が
-    // 行末禁則なら、境界を最大2単位前倒しして次段へ送る
-    let pull = 0;
-    while (pull < 2 && u - pull - 1 >= colStart) {
-      const last = units[u - pull - 1];
-      const next = units[u - pull];
-      if (
-        !isHeadKinsoku(next.text[0]) &&
-        !isEndKinsoku(last.text[last.text.length - 1])
-      )
+  for (let col = 0; col < cols && u < units.length; col++) {
+    for (const seg of freeIntervals(col)) {
+      if (u >= units.length) break;
+      const u0 = u; // 現区間の先頭単位 index（禁則の前倒し範囲）
+      let used = 0;
+      let colBrk = false; // brk = 段送り → この段の残り区間は使わない
+      while (u < units.length) {
+        const un = units[u];
+        if (un.kind === 'brk') {
+          // \n = 段送り — 段を1つ消費して次段へ
+          u++;
+          colBrk = true;
+          break;
+        }
+        const h = unitH(un);
+        if (used + h <= seg.h + 1e-9) {
+          used += h;
+          u++;
+          continue;
+        }
+        if (used === 0) {
+          // 空区間にも収まらない単位（巨大字等）は強制配置して区間を進める
+          u++;
+        } else {
+          // 区間が満杯 → 禁則の境界調整。次単位が行頭禁則または現単位が
+          // 行末禁則なら、境界を最大2単位前倒しして次区間へ送る
+          let pull = 0;
+          while (pull < 2 && u - pull - 1 >= u0) {
+            const last = units[u - pull - 1];
+            const next = units[u - pull];
+            if (
+              !isHeadKinsoku(next.text[0]) &&
+              !isEndKinsoku(last.text[last.text.length - 1])
+            )
+              break;
+            pull++;
+          }
+          u -= pull;
+        }
         break;
-      pull++;
+      }
+      const u1 = u - (colBrk ? 1 : 0);
+      if (u1 > u0) flow.segs.push({ col, y: seg.y, h: seg.h, u0, u1 });
+      if (colBrk) break;
     }
-    u -= pull;
-    col++;
-    used = 0;
-    colStart = u;
   }
   let n = 0;
   for (let i = 0; i < u; i++) n += units[i].raw;
-  return n;
+  flow.chars = n;
+  return flow;
+}
+
+/**
+ * 縦版 fit() — text を box へ流し込み、収まる接頭辞の文字数を返す。
+ * layoutVertical() の計画から文字数だけを取り出す薄いラッパ。
+ * box.writing が 'vertical-rl' でない場合の呼出は想定外（横版を使うこと）。
+ */
+export function fitVertical(text: string, box: AreaBox): number {
+  return layoutVertical(text, box).chars;
 }
