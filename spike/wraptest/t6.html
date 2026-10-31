@@ -1,0 +1,41 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  :root { --fs: 19.843px; }
+  .s { writing-mode:vertical-rl; font-variant-east-asian:full-width;
+    letter-spacing:0; text-align:start; line-height:31.749px;
+    font-size:var(--fs); font-family:'Yu Mincho',serif;
+    height:396.88px; white-space:pre-wrap; }
+  .sa { text-spacing-trim: space-all; }
+</style>
+<!-- t6: 全角句読点の 1字=1セル検証。Chromium の既定 (text-spacing-trim:
+     normal) は隣接句読点を半角幅へ詰め、、（ が1セルに重なる。
+     space-all 側は全字が 1em 進行であること -->
+<div class="s sa" id="a"></div>
+<div class="s" id="b"></div>
+<pre id="out"></pre>
+<script>
+  const fs = 19.843;
+  const text = 'あ、（い）。「う」';
+  let out = `text="${text}" 1cell=${fs}px\n`;
+  for (const [id, label] of [['a', 'space-all'], ['b', 'default']]) {
+    const s = document.getElementById(id);
+    s.textContent = text;
+    const node = s.firstChild;
+    const range = document.createRange();
+    let prevY = null, bad = 0;
+    out += `\n[${label}]\n`;
+    for (let i = 0; i < text.length; i++) {
+      range.setStart(node, i);
+      range.setEnd(node, i + 1);
+      const r = range.getBoundingClientRect();
+      const adv = prevY == null ? fs : r.y - prevY;
+      prevY = r.y;
+      const ok = Math.abs(adv - fs) < 0.5;
+      if (!ok) bad++;
+      out += `  ${i} "${text[i]}" h=${r.height.toFixed(2)} adv=${adv.toFixed(2)} ${ok ? '' : 'BAD'}\n`;
+    }
+    out += `  => ${bad === 0 ? 'PASS' : `FAIL (${bad} off-cell)`}\n`;
+  }
+  document.getElementById('out').textContent = out;
+</script>

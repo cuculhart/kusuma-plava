@@ -362,6 +362,10 @@ body,
 .parea.vt {
   writing-mode: vertical-rl;
   font-variant-east-asian: full-width;
+  /* Chromium は text-spacing-trim 初期値 normal で隣接する全角句読点を
+     半角幅へ詰める（、（=2字が1セルに重なる）。fitVertical は 1字=1セル
+     前提なので space-all で全角進行を強制する（Chrome 系のみ有効） */
+  text-spacing-trim: space-all;
   letter-spacing: 0;
   text-align: start;
   line-height: var(--pitch);
