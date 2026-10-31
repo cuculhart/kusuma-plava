@@ -450,6 +450,18 @@ body,
   text-align: center;
 }
 
+/* 組版単位を block-end（左）へ寄せる — 段ピッチ内の中央寄せでは
+   字がルビ欄にも食い込むため、字は左側の字セル1emに置き、右側の
+   ルビ欄0.6emを完全に空ける。ルビ親字（.vr内の.vc）も同じく寄る */
+.ta-slice.vt .vc,
+.parea.vt .vc,
+.ta-slice.vt .rc,
+.parea.vt .rc,
+.ta-slice.vt .tcy,
+.parea.vt .tcy {
+  transform: translateX(-0.3em);
+}
+
 /* ルビ単位 — 進行を親字数ぶんに固定（inline-size は vtrender が
    em×親字数で inline 指定）、ブロック方向（段の厚み）も段ピッチに
    固定。position:relative は .vr rt の絶対配置基準。
