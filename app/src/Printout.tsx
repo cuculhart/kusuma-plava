@@ -44,6 +44,9 @@ export function Printout({
   gridPrint,
   gridColor,
   gridAlpha,
+  hashira,
+  hashiraRect,
+  hashiraFont,
   objects,
   sliceRuns,
   areaAlone,
@@ -61,6 +64,11 @@ export function Printout({
   /** v0.6: 升目線の色（#rrggbb）と濃さ 0〜1 — 文書設定 */
   gridColor: string;
   gridAlpha: number;
+  /** v0.7: 柱 — 天余白へ出す走り書き（空=出さない）。矩形は文書設定の
+      升目仕様から App 側で計算済みのページローカル mm、書体は文書既定 */
+  hashira: string;
+  hashiraRect: { top: number; right: number; height: number; size: number };
+  hashiraFont: string;
   objects: WorldObject[];
   /** テキストエリア → 表示中スライスのラン列（連鎖レイアウト＋装飾解決済み） */
   sliceRuns: (o: WorldObject) => TextRun[];
@@ -384,6 +392,21 @@ export function Printout({
             )}
             {/* v0.3: ページ番号（ノンブル）— 版面下端中央、1 始まり */}
             {pageNum && <div className="pnum">{pr.index + 1}</div>}
+            {/* v0.7: 柱 — 天余白・升目枠右辺揃えの縦書き（枠の上辺まで） */}
+            {hashira !== '' && (
+              <div
+                className="hashira"
+                style={{
+                  top: `${hashiraRect.top}mm`,
+                  right: `${hashiraRect.right}mm`,
+                  height: `${hashiraRect.height}mm`,
+                  fontSize: `${hashiraRect.size}mm`,
+                  fontFamily: hashiraFont,
+                }}
+              >
+                {hashira}
+              </div>
+            )}
           </div>
         ))}
       </div>

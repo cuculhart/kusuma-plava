@@ -41,6 +41,8 @@ interface ArchiveDoc {
       欠落=DEFAULT_GRID_COLOR・1 — 従来の薄いグレー） */
   gridColor?: string;
   gridAlpha?: number;
+  /** 柱 — 天余白へ出す走り書き（v0.7。欠落・空=出さない） */
+  hashira?: string;
 }
 
 const EXT_OF_MIME: Record<string, string> = {
@@ -90,6 +92,7 @@ export function packArchive(input: {
   genko?: GenkoGrid;
   gridColor?: string;
   gridAlpha?: number;
+  hashira?: string;
 }): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   let imgN = 0;
@@ -119,6 +122,8 @@ export function packArchive(input: {
     genko: input.genko,
     gridColor: input.gridColor,
     gridAlpha: input.gridAlpha,
+    // 空文字は書き出さない（unpack 側は欠落=空として畳む）
+    hashira: input.hashira || undefined,
   };
   files['doc.json'] = strToU8(JSON.stringify(doc));
   return zipSync(files);
@@ -141,6 +146,8 @@ export function unpackArchive(bytes: Uint8Array): {
   /** v0.6: 升目線の色と濃さ。欠落・不正値は既定（薄いグレー・濃さ1） */
   gridColor: string;
   gridAlpha: number;
+  /** v0.7: 柱 — 天余白へ出す走り書き。欠落・非文字列は空（出さない） */
+  hashira: string;
 } {
   const files = unzipSync(bytes);
   const raw = files['doc.json'];
@@ -198,5 +205,7 @@ export function unpackArchive(bytes: Uint8Array): {
       doc.gridAlpha <= 1
         ? doc.gridAlpha
         : 1,
+    // v0.7: 柱 — 文字列以外（旧書庫の欠落含む）は空 = 出さない
+    hashira: typeof doc.hashira === 'string' ? doc.hashira : '',
   };
 }

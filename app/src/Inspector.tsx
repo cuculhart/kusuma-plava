@@ -229,6 +229,9 @@ export function RightDock({
     onGridColor: (s: string) => void;
     gridAlpha: number;
     onGridAlpha: (v: number) => void;
+    /** v0.7: 柱 — 天余白へ出す走り書き（タイトル等。空=出さない） */
+    hashira: string;
+    onHashira: (s: string) => void;
     /** v0.3: 版面に収まる升目数（v=段あたり字数・h=段数） */
     hanmenCells: { v: number; h: number };
     /** v0.3: 升目プリセットで適用される字サイズ（mm）。
@@ -767,6 +770,8 @@ function DocProps({
   onGridColor,
   gridAlpha,
   onGridAlpha,
+  hashira,
+  onHashira,
   hanmenCells,
   fit400fs,
   onFit400,
@@ -797,6 +802,8 @@ function DocProps({
   onGridColor: (s: string) => void;
   gridAlpha: number;
   onGridAlpha: (v: number) => void;
+  hashira: string;
+  onHashira: (s: string) => void;
   hanmenCells: { v: number; h: number };
   fit400fs: number | null;
   onFit400: () => void;
@@ -852,6 +859,15 @@ function DocProps({
             value={title}
             placeholder={t('doc.untitled')}
             onChange={(e) => onTitle(e.currentTarget.value)}
+          />
+        </label>
+        {/* v0.7: 柱 — 天余白・升目枠右辺揃えの縦書き。空=出さない */}
+        <label>
+          {t('doc.hashira')}
+          <input
+            type="text"
+            value={hashira}
+            onChange={(e) => onHashira(e.currentTarget.value)}
           />
         </label>
         <label>

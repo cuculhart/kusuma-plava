@@ -154,6 +154,11 @@ function hanmenBox(spec: PaperSpec): { bw: number; bh: number } {
 /** 升目グリッド枠の既定 — 原稿用紙 縦20字×横20段（=400字詰） */
 const GENKO_GRID: GenkoGrid = { cells: 20, cols: 20 };
 
+/** v0.7: 柱 — 天余白の上端と字サイズ（mm）。升目枠の右辺に欄の右端を
+    揃え、枠の上辺までを高さとする縦書き1段（hashiraRect 参照） */
+const HASHIRA_TOP_MM = 5;
+const HASHIRA_FONT_MM = 3;
+
 /** 用紙 spec に対する升目枠の字サイズ（mm）—
     fs = min(版面高/cells, 版面幅/(cols × 段ピッチ係数))。
     段ピッチ = fontSize × (1 + RUBY_LANE_RATIO)。A4縦なら段ピッチが
@@ -402,6 +407,9 @@ export function App() {
   // 透過 100% は従来の薄いグレー（0.45/0.18）と同じ見た目
   const [gridColor, setGridColor] = useState(DEFAULT_GRID_COLOR);
   const [gridAlpha, setGridAlpha] = useState(1);
+  // v0.7: 柱（タイトル等の走り書き）— 文書設定。天余白・升目枠の右辺
+  // 揃えで縦書きに出す。空=出さない。doc.json の hashira へ保存
+  const [hashira, setHashira] = useState('');
   // v0.3: 目標字数 — アプリ設定（文書ではなく環境の好み）として
   // localStorage へ。正準値は字数（枚数入力は ×400 で畳み込む）
   const [goal, setGoal] = useState(
@@ -425,6 +433,7 @@ export function App() {
     genko: GenkoGrid;
     gridColor: string;
     gridAlpha: number;
+    hashira: string;
   };
   const histRef = useRef<{ past: Snap[]; future: Snap[]; last: number }>({
     past: [],
@@ -846,6 +855,7 @@ export function App() {
     genko,
     gridColor,
     gridAlpha,
+    hashira,
   });
   const applySnap = (s: Snap) => {
     applyingRef.current = true;
@@ -868,6 +878,7 @@ export function App() {
     setGenko(s.genko);
     setGridColor(s.gridColor);
     setGridAlpha(s.gridAlpha);
+    setHashira(s.hashira);
     snapRef.current = s;
     applyingRef.current = false;
   };
@@ -907,7 +918,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -942,6 +953,7 @@ export function App() {
           genko: { ...GENKO_GRID },
           gridColor: DEFAULT_GRID_COLOR,
           gridAlpha: 1,
+          hashira: '',
         };
         const cur = {
           spec: r.model.spec,
@@ -957,6 +969,7 @@ export function App() {
           genko: r.genko ?? { ...GENKO_GRID },
           gridColor: r.gridColor,
           gridAlpha: r.gridAlpha,
+          hashira: r.hashira,
         };
         if (JSON.stringify(blank) === JSON.stringify(cur)) return;
         applyArchive(r);
@@ -993,6 +1006,7 @@ export function App() {
           genko,
           gridColor,
           gridAlpha,
+          hashira,
         });
         void saveDraft(u8).then((at) => {
           if (at) setDraftAt(at);
@@ -1003,7 +1017,7 @@ export function App() {
     }, 1500);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira]);
 
   // v0.4: 執筆モードのホイール横送り — ページは右→左に並ぶので
   // ホイール（deltaY やトラックパッド deltaX）は横パンへ向ける。
@@ -1088,6 +1102,7 @@ export function App() {
     setGenko({ ...GENKO_GRID });
     setGridColor(DEFAULT_GRID_COLOR);
     setGridAlpha(1);
+    setHashira('');
     createdAtRef.current = new Date().toISOString();
     dirtyRef.current = false;
     engine.setSelection([]);
@@ -1109,6 +1124,7 @@ export function App() {
       genko,
       gridColor,
       gridAlpha,
+      hashira,
     });
     const a = document.createElement('a');
     const url = URL.createObjectURL(
@@ -1159,6 +1175,8 @@ export function App() {
     // v0.6: 升目線の色+濃さ — unpack 側で欠落・不正値は既定へ畳み済み
     setGridColor(r.gridColor);
     setGridAlpha(r.gridAlpha);
+    // v0.7: 柱 — unpack 側で欠落は空へ畳み済み（空=出さない）
+    setHashira(r.hashira);
     createdAtRef.current = r.createdAt || new Date().toISOString();
     dirtyRef.current = false;
     engine.setSelection([]);
@@ -1912,6 +1930,29 @@ export function App() {
     }
   };
 
+  // ── v0.7: 柱のページローカル配置（mm） ──
+  // 天の余白に縦書き1段で出す。欄の右辺は升目枠の右辺（枠はページ
+  // 左右中央寄せ → 右辺 = (用紙幅 − 枠幅)/2）、高さは枠の上辺まで。
+  // 升目が組めない用紙では版面（HANMEN_MARGIN+PAD の内側）へ畳む。
+  // 版面の外側に置く飾りなので fit()/flow の計算には関与しない
+  const hashiraRect = (() => {
+    const dims = paperDims(spec);
+    const fw =
+      fit400fs != null
+        ? genko.cols * fit400fs * (1 + RUBY_LANE_RATIO) + 2 * TEXT_PAD_MM
+        : dims.w - 2 * (HANMEN_MARGIN_MM + TEXT_PAD_MM);
+    const fh =
+      fit400fs != null
+        ? genko.cells * fit400fs + 2 * TEXT_PAD_MM
+        : dims.h - 2 * (HANMEN_MARGIN_MM + TEXT_PAD_MM);
+    return {
+      top: HASHIRA_TOP_MM,
+      right: (dims.w - fw) / 2,
+      height: Math.max(0, (dims.h - fh) / 2 - HASHIRA_TOP_MM),
+      size: HASHIRA_FONT_MM,
+    };
+  })();
+
   const renderObject = (o: WorldObject) => {
     if (o.kind === PAGE_KIND) {
       const d = o.data as { index: number };
@@ -1949,6 +1990,22 @@ export function App() {
             }}
           >
             {d.index + 1}
+          </div>
+        )}
+        {/* v0.7: 柱 — 文書設定の文字列があるとき天余白へ縦書きで出す
+            （升目枠の右辺揃え・上辺まで。印刷側 .hashira と同じ位置） */}
+        {hashira !== '' && (
+          <div
+            className="hashira-canvas nodrag"
+            style={{
+              top: hashiraRect.top * MM_PX * z,
+              right: hashiraRect.right * MM_PX * z,
+              height: hashiraRect.height * MM_PX * z,
+              fontSize: Math.max(9, hashiraRect.size * MM_PX * z),
+              fontFamily: docFont,
+            }}
+          >
+            {hashira}
           </div>
         )}
       </>
@@ -2657,6 +2714,8 @@ export function App() {
             onGridColor: setGridColor,
             gridAlpha,
             onGridAlpha: setGridAlpha,
+            hashira,
+            onHashira: setHashira,
             hanmenCells,
             fit400fs: cellArea ? fit400fs : null,
             onFit400: fit400,
@@ -2706,6 +2765,9 @@ export function App() {
           gridPrint={gridPrint}
           gridColor={gridColor}
           gridAlpha={gridAlpha}
+          hashira={hashira}
+          hashiraRect={hashiraRect}
+          hashiraFont={docFont}
           objects={canon(engine.doc.objects)}
           sliceRuns={(o) => {
             const c = chainOf(chains, o.id);
