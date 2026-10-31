@@ -146,6 +146,8 @@ export function RightDock({
   onSelectChain,
   indent,
   onIndent,
+  goal,
+  onGoal,
   chainOverflow,
   onChainText,
   onApplyMark,
@@ -176,6 +178,9 @@ export function RightDock({
   /** 字下げ設定（Enter で段落頭に全角スペース） */
   indent: boolean;
   onIndent: (v: boolean) => void;
+  /** 目標字数（v0.3 アプリ設定 — 正準値は字数） */
+  goal: number;
+  onGoal: (chars: number) => void;
   chainOverflow: string;
   onChainText: (text: string) => void;
   /** 連鎖テキスト [s,e) への部分装飾適用 */
@@ -210,6 +215,12 @@ export function RightDock({
     /** ドキュメント既定フォント（新規テキストエリアへ適用） */
     font: string;
     onFont: (s: string) => void;
+    /** v0.3: ページ番号（ノンブル）を印刷に出すか */
+    pageNum: boolean;
+    onPageNum: (on: boolean) => void;
+    /** v0.3: 升目を印刷に出すか */
+    gridPrint: boolean;
+    onGridPrint: (on: boolean) => void;
   };
   t: TFunc;
 }) {
@@ -234,6 +245,8 @@ export function RightDock({
         onClose={onDeselect}
         indent={indent}
         onIndent={onIndent}
+        goal={goal}
+        onGoal={onGoal}
         chains={chains}
         onPickChain={onSelectChain}
         t={t}
@@ -256,6 +269,8 @@ export function RightDock({
           onClose={onDeselect}
           indent={indent}
           onIndent={onIndent}
+          goal={goal}
+          onGoal={onGoal}
           chains={chains}
           onPickChain={onSelectChain}
           t={t}
@@ -718,6 +733,10 @@ function DocProps({
   onOpacity,
   font,
   onFont,
+  pageNum,
+  onPageNum,
+  gridPrint,
+  onGridPrint,
   t,
 }: {
   title: string;
@@ -735,6 +754,10 @@ function DocProps({
   onOpacity: (v: number) => void;
   font: string;
   onFont: (s: string) => void;
+  pageNum: boolean;
+  onPageNum: (on: boolean) => void;
+  gridPrint: boolean;
+  onGridPrint: (on: boolean) => void;
   t: TFunc;
 }) {
   const [ins, setIns] = useState(1);
@@ -794,6 +817,22 @@ function DocProps({
             onChange={(e) => onFooter(e.currentTarget.checked)}
           />
           {t('doc.footer')}
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={pageNum}
+            onChange={(e) => onPageNum(e.currentTarget.checked)}
+          />
+          {t('doc.pageNum')}
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={gridPrint}
+            onChange={(e) => onGridPrint(e.currentTarget.checked)}
+          />
+          {t('doc.gridPrint')}
         </label>
         <label>
           {t('doc.opacity')}

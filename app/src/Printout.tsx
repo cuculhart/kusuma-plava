@@ -36,6 +36,8 @@ const intersects = (
 export function Printout({
   model,
   footer,
+  pageNum,
+  gridPrint,
   objects,
   sliceRuns,
   areaAlone,
@@ -45,6 +47,10 @@ export function Printout({
 }: {
   model: PageModel;
   footer: boolean;
+  /** v0.3: ページ番号（ノンブル）— 版面下端中央に 1 始まりで出す */
+  pageNum: boolean;
+  /** v0.3: 升目の印刷出し分け — OFF で縦書き升目グリッドを抜く */
+  gridPrint: boolean;
   objects: WorldObject[];
   /** テキストエリア → 表示中スライスのラン列（連鎖レイアウト＋装飾解決済み） */
   sliceRuns: (o: WorldObject) => TextRun[];
@@ -242,7 +248,11 @@ export function Printout({
                 return (
                   <div
                     key={o.id}
-                    className={vertical ? 'parea vt' : 'parea'}
+                    className={
+                      vertical
+                        ? `parea vt${gridPrint ? '' : ' nogrid'}`
+                        : 'parea'
+                    }
                     style={{
                       left: `${left}mm`,
                       top: `${top}mm`,
@@ -325,6 +335,8 @@ export function Printout({
                 {pr.index + 1} / {rects.length}
               </div>
             )}
+            {/* v0.3: ページ番号（ノンブル）— 版面下端中央、1 始まり */}
+            {pageNum && <div className="pnum">{pr.index + 1}</div>}
           </div>
         ))}
       </div>

@@ -373,6 +373,12 @@ body,
     );
 }
 
+/* v0.3: 升目の印刷出し分け — .nogrid でグリッド背景だけを抜く
+   （キャンバス側の .ta-slice.vt には付けない。常に升目を出す） */
+.parea.vt.nogrid {
+  background-image: none;
+}
+
 /* ルビのヨミ — 主線より小さく（段のルビ欄に載る想定） */
 .ta-slice.vt rt,
 .parea.vt rt {
@@ -625,6 +631,101 @@ body,
 /* 字数（総字数・原稿用紙換算・選択字数）は行右へ寄せる */
 .chain-count {
   margin-left: auto;
+  white-space: nowrap;
+}
+
+/* ── 検索・置換バー（v0.3）— テキスト欄の直上の帯 ── */
+.find-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface2);
+  border-bottom: 1px solid var(--line);
+}
+
+.find-bar input {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+.find-bar .find-q {
+  width: 130px;
+}
+
+.find-bar .find-r {
+  width: 100px;
+}
+
+.find-bar button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.find-bar button:disabled {
+  opacity: 0.45;
+}
+
+.find-count {
+  min-width: 38px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ── 目標字数・進捗（v0.3）— 執筆ツールの下の帯 ── */
+.chain-goal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
+.chain-goal .goal-label {
+  color: var(--text);
+}
+
+.chain-goal input[type='number'] {
+  width: 64px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.goal-bar {
+  flex: 1;
+  min-width: 60px;
+  height: 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.goal-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+.goal-text {
   white-space: nowrap;
 }
 
@@ -1152,6 +1253,27 @@ body,
   right: 10mm;
   font-size: 10px;
   color: #333;
+}
+
+/* v0.3: ページ番号（ノンブル）— 版面下端中央、1 始まり */
+.pnum {
+  position: absolute;
+  bottom: 5mm;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 10px;
+  color: #333;
+}
+
+/* キャンバス側のページ番号（文書設定 ON のときのみ出す — .pnum と同じ位置） */
+.pnum-canvas {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: var(--muted);
+  pointer-events: none;
 }
 
 @media print {

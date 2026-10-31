@@ -25,6 +25,10 @@ interface ArchiveDoc {
   footer: boolean;
   pageOpacity: number;
   docFont?: string;
+  /** ページ番号（ノンブル）を印刷に出すか（v0.3。欠落=false） */
+  pageNum?: boolean;
+  /** 升目を印刷に出すか（v0.3。欠落=true — 旧書庫は WYSIWYG 印刷だった） */
+  gridPrint?: boolean;
 }
 
 const EXT_OF_MIME: Record<string, string> = {
@@ -69,6 +73,8 @@ export function packArchive(input: {
   createdAt: string;
   pageOpacity: number;
   docFont?: string;
+  pageNum?: boolean;
+  gridPrint?: boolean;
 }): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   let imgN = 0;
@@ -93,6 +99,8 @@ export function packArchive(input: {
     footer: input.footer,
     pageOpacity: input.pageOpacity,
     docFont: input.docFont,
+    pageNum: input.pageNum,
+    gridPrint: input.gridPrint,
   };
   files['doc.json'] = strToU8(JSON.stringify(doc));
   return zipSync(files);
@@ -108,6 +116,8 @@ export function unpackArchive(bytes: Uint8Array): {
   createdAt: string;
   pageOpacity: number;
   docFont?: string;
+  pageNum: boolean;
+  gridPrint: boolean;
 } {
   const files = unzipSync(bytes);
   const raw = files['doc.json'];
@@ -137,5 +147,9 @@ export function unpackArchive(bytes: Uint8Array): {
     createdAt: doc.createdAt ?? '',
     pageOpacity: doc.pageOpacity ?? 100,
     docFont: doc.docFont,
+    // v0.3 追加項目 — 欠落時は v0.2 までの既定挙動を再現する
+    // （ページ番号なし / 升目は印刷に出る）
+    pageNum: doc.pageNum === true,
+    gridPrint: doc.gridPrint !== false,
   };
 }

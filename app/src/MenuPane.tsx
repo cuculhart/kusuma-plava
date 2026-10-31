@@ -21,6 +21,7 @@ export function MenuPane({
   onNew,
   onOpen,
   onSave,
+  onExportText,
   onUndo,
   onRedo,
   canUndo,
@@ -49,6 +50,8 @@ export function MenuPane({
   onNew: () => void;
   onOpen: () => void;
   onSave: () => void;
+  /** 投稿用テキスト出力（v0.3）— 連鎖テキストを .txt で書き出す */
+  onExportText: () => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -103,7 +106,7 @@ export function MenuPane({
         <span className="m-ic">≡</span>
         {!collapsed && (
           <span className="m-label">
-            Kusuma Plava <span className="m-ver">v0.2.0</span>
+            Kusuma Plava <span className="m-ver">v0.3.0</span>
           </span>
         )}
       </button>
@@ -118,6 +121,10 @@ export function MenuPane({
       {item('存', t('menu.save'), onSave, {
         title: t('menu.saveTip'),
         enIc: 'S',
+      })}
+      {item('文', t('menu.exportText'), onExportText, {
+        title: t('menu.exportTextTip'),
+        enIc: 'T',
       })}
       <div className="m-sep" />
       {canUndo &&

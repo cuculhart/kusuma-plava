@@ -132,6 +132,24 @@ export function tokenizeVertical(text: string): VUnit[] {
   return units;
 }
 
+// 糖衣のグローバル版（投稿用テキスト出力の正規化用 — v0.3）。
+// 変換順序は tokenizeVertical の判定順と同じ（明示糖衣 → 暗黙糖衣）。
+const RE_SUGAR_EX_G =
+  /\[-([^\[\]-]{1,40})-\] ?\(-([^\n-]{1,50})-\)/g;
+const RE_SUGAR_IM_G = new RegExp(
+  '(' + KANJI + '+)\\(-([^\\n-]{1,50})-\\)',
+  'g',
+);
+
+/** 入力糖衣を正規形 ｜親字《ヨミ》 へ正規化する（v0.3 投稿用テキスト出力）。
+    `[-親字-] (-ヨミ-)` / `親字(-ヨミ-)` → `｜親字《ヨミ》`。
+    正規形の ｜《》 ルビとその他の本文はそのまま保持する。 */
+export function normalizeRuby(text: string): string {
+  return text
+    .replace(RE_SUGAR_EX_G, '｜$1《$2》')
+    .replace(RE_SUGAR_IM_G, '｜$1《$2》');
+}
+
 // ── 禁則（境界ルールのみ — 実務ルール。計測ではなく分割点の前倒し） ──
 // 行頭禁則: 句読点・中点・コロン類・感嘆疑問・閉じ括弧・長音繰返し・
 //           省略記号・小さい仮名。半角の , . : ; ! ? ) も含む

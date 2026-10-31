@@ -23,6 +23,8 @@ export function ChainPane({
   onClose,
   indent,
   onIndent,
+  goal,
+  onGoal,
   chains,
   onPickChain,
   t,
@@ -40,6 +42,9 @@ export function ChainPane({
   /** 字下げ — Enter の段落頭に全角スペースを自動挿入（v0.2） */
   indent: boolean;
   onIndent: (v: boolean) => void;
+  /** 目標字数（v0.3）— 正準値は字数。0 = 未設定（枚数側は ×400 で畳む） */
+  goal: number;
+  onGoal: (chars: number) => void;
   /** 連鎖タブ（複数連鎖時の切替 + 連鎖別字数）。未指定なら非表示 */
   chains?: Chain[];
   onPickChain?: (chainId: string) => void;
@@ -131,6 +136,98 @@ export function ChainPane({
     el?.focus();
   };
 
+  // ── v0.3: 検索・置換 — アクティブ連鎖のテキストだけを対象にする
+  // （textarea 文字列操作の範囲。キャンバスは再レイアウトで自動追従） ──
+  const [findOpen, setFindOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [repl, setRepl] = useState('');
+  const [curHit, setCurHit] = useState(-1); // 選択中の一致 index
+  // 置換後にテキストをまたいで選択範囲を復帰するための退避
+  const pendingSel = useRef<{ s: number; e: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = taRef.current;
+    if (el && pendingSel.current) {
+      el.selectionStart = pendingSel.current.s;
+      el.selectionEnd = pendingSel.current.e;
+      pendingSel.current = null;
+    }
+  }, [chain.text]);
+
+  // 一致位置の全列挙 — 素朴な indexOf 走査（原稿規模なら十分軽い）
+  const hits: number[] = [];
+  if (query) {
+    for (
+      let i = chain.text.indexOf(query);
+      i >= 0;
+      i = chain.text.indexOf(query, i + Math.max(1, query.length))
+    ) {
+      hits.push(i);
+    }
+  }
+
+  const pick = (i: number) => {
+    const el = taRef.current;
+    if (!el || i < 0 || i >= hits.length) return;
+    // 一致を textarea の選択範囲にする（最も安い現在地の可視化）
+    el.selectionStart = hits[i];
+    el.selectionEnd = hits[i] + query.length;
+    setCurHit(i);
+  };
+  const goNext = () => {
+    if (!hits.length) return;
+    const pos = taRef.current?.selectionEnd ?? 0;
+    const i = hits.findIndex((h) => h >= pos);
+    pick(i >= 0 ? i : 0); // 末尾を越えたら先頭へ回る
+  };
+  const goPrev = () => {
+    if (!hits.length) return;
+    const pos = taRef.current?.selectionStart ?? chain.text.length;
+    let i = -1;
+    for (let k = hits.length - 1; k >= 0; k--) {
+      if (hits[k] < pos) {
+        i = k;
+        break;
+      }
+    }
+    pick(i >= 0 ? i : hits.length - 1); // 先頭より前なら末尾へ回る
+  };
+  const replaceOne = () => {
+    if (!query || !hits.length) return;
+    const el = taRef.current;
+    // 現在選択が一致そのものならそれを、違えばキャレット以降の
+    // 最初の一致を置換する
+    let s = -1;
+    if (
+      el &&
+      el.selectionEnd - el.selectionStart === query.length &&
+      chain.text.slice(el.selectionStart, el.selectionEnd) === query
+    ) {
+      s = el.selectionStart;
+    } else {
+      const pos = el?.selectionEnd ?? 0;
+      const i = hits.findIndex((h) => h >= pos);
+      s = hits[i >= 0 ? i : 0];
+    }
+    pendingSel.current = { s, e: s + repl.length };
+    setCurHit(-1);
+    onText(chain.text.slice(0, s) + repl + chain.text.slice(s + query.length));
+  };
+  const replaceAll = () => {
+    if (!query || !hits.length) return;
+    setCurHit(-1);
+    onText(chain.text.split(query).join(repl));
+  };
+  const openFind = () => {
+    // テキスト側の選択を初期クエリにする（改行を跨ぐ長選択は除外）
+    const el = taRef.current;
+    if (el && el.selectionEnd > el.selectionStart) {
+      const v = chain.text.slice(el.selectionStart, el.selectionEnd);
+      if (v.length <= 60 && !v.includes('\n')) setQuery(v);
+    }
+    setCurHit(-1);
+    setFindOpen(true);
+  };
+
   // 字数 — 原稿用紙換算は 400字=1枚（作家の共通言語）。
   // サロゲート対を1字に数えるためコードポイントで数える
   const total = [...chain.text].length;
@@ -161,6 +258,77 @@ export function ChainPane({
           ×
         </button>
       </header>
+      {/* v0.3: 検索・置換バー — この連鎖のテキストだけを対象にする */}
+      {findOpen && (
+        <div className="find-bar">
+          <input
+            className="find-q"
+            value={query}
+            placeholder={t('find.placeholder')}
+            autoFocus
+            onChange={(e) => {
+              const v = e.currentTarget.value;
+              setQuery(v);
+              setCurHit(-1);
+              // 入力中も最初の一致へキャレットを動かす
+              // （ブラウザのページ内検索と同じ感覚）
+              const el = taRef.current;
+              if (!v || !el) return;
+              const i = chain.text.indexOf(v, el.selectionStart);
+              const idx = i >= 0 ? i : chain.text.indexOf(v);
+              if (idx >= 0) {
+                el.selectionStart = idx;
+                el.selectionEnd = idx + v.length;
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') goNext();
+              if (e.key === 'Escape') setFindOpen(false);
+            }}
+          />
+          <span className="find-count">
+            {tf(
+              t,
+              'find.count',
+              curHit >= 0 && curHit < hits.length ? curHit + 1 : '–',
+              hits.length,
+            )}
+          </span>
+          <button
+            title={t('find.prev')}
+            disabled={!hits.length}
+            onClick={goPrev}
+          >
+            ↑
+          </button>
+          <button
+            title={t('find.next')}
+            disabled={!hits.length}
+            onClick={goNext}
+          >
+            ↓
+          </button>
+          <input
+            className="find-r"
+            value={repl}
+            placeholder={t('find.replace')}
+            onChange={(e) => setRepl(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') replaceOne();
+              if (e.key === 'Escape') setFindOpen(false);
+            }}
+          />
+          <button disabled={!hits.length} onClick={replaceOne}>
+            {t('find.replaceOne')}
+          </button>
+          <button disabled={!hits.length} onClick={replaceAll}>
+            {t('find.replaceAll')}
+          </button>
+          <button title={t('chain.close')} onClick={() => setFindOpen(false)}>
+            ×
+          </button>
+        </div>
+      )}
       <textarea
         ref={taRef}
         className="chain-text"
@@ -169,9 +337,18 @@ export function ChainPane({
         placeholder={t('chain.placeholder')}
         onChange={onTextChange}
         onSelect={syncSel}
+        onKeyDown={(e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+            e.preventDefault();
+            openFind();
+          }
+        }}
       />
-      {/* 執筆ツール — 話区切り / 字下げ / 字数 */}
+      {/* 執筆ツール — 検索 / 話区切り / 字下げ / 字数 */}
       <div className="chain-tools">
+        <button title={t('find.open')} onClick={() => setFindOpen((v) => !v)}>
+          検
+        </button>
         <button title={t('write.breakTip')} onClick={() => insertBreak('＊')}>
           ＊
         </button>
@@ -190,6 +367,57 @@ export function ChainPane({
           {tf(t, 'write.count', total, sheets)}
           {hasSel ? ` · ${tf(t, 'write.sel', selCount)}` : ''}
         </span>
+      </div>
+      {/* v0.3: 目標字数 + 進捗 — 正準値は字数。枚数入力は ×400 で
+          畳み込む（400字詰N枚は作家の共通言語） */}
+      <div className="chain-goal">
+        <span className="goal-label">{t('write.goal')}</span>
+        <input
+          type="number"
+          min={0}
+          step={100}
+          value={goal || ''}
+          placeholder="0"
+          title={t('write.goalCharsTip')}
+          onChange={(e) =>
+            onGoal(Math.max(0, +e.currentTarget.value || 0))
+          }
+        />
+        <span>{t('write.goalChars')}</span>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={goal ? +(goal / 400).toFixed(1) : ''}
+          placeholder="0"
+          title={t('write.goalSheetsTip')}
+          onChange={(e) =>
+            onGoal(Math.max(0, Math.round((+e.currentTarget.value || 0) * 400)))
+          }
+        />
+        <span>{t('write.goalSheets')}</span>
+        {goal > 0 && (
+          <>
+            <span className="goal-bar" title={t('write.goalTip')}>
+              <span
+                className="goal-fill"
+                style={{
+                  width: `${Math.min(100, (total / goal) * 100)}%`,
+                }}
+              />
+            </span>
+            <span className="goal-text">
+              {tf(
+                t,
+                'write.progress',
+                total.toLocaleString(),
+                goal.toLocaleString(),
+                (total / 400).toFixed(1),
+                (goal / 400).toFixed(1),
+              )}
+            </span>
+          </>
+        )}
       </div>
       {overflow && (
         <div className="chain-overflow">

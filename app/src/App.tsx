@@ -15,6 +15,7 @@ import {
   insertPage,
   layoutChain,
   linkChains,
+  normalizeRuby,
   pageRectAt,
   pageRects,
   pruneChains,
@@ -37,6 +38,7 @@ import { Printout } from './Printout';
 import { Rulers } from './Rulers';
 import { makeT, tf, type Lang } from './i18n';
 import { packArchive, unpackArchive } from './docio';
+import { loadDraft, saveDraft } from './autosave';
 import { createCanvasMeasurer } from './measure';
 import { vunitSpans, type VStyle } from './vtrender';
 import {
@@ -197,6 +199,21 @@ export function App() {
   const [indent, setIndent] = useState(
     () => localStorage.getItem('kusuma-indent') !== '0',
   );
+  // v0.3: ページ番号（ノンブル）— 文書設定。.slm の doc.json へ保存
+  const [pageNum, setPageNum] = useState(false);
+  // v0.3: 升目の印刷出し分け — 文書設定。既定 ON（WYSIWYG 整合:
+  // キャンバスに見える升目はそのまま印刷に出る）
+  const [gridPrint, setGridPrint] = useState(true);
+  // v0.3: 目標字数 — アプリ設定（文書ではなく環境の好み）として
+  // localStorage へ。正準値は字数（枚数入力は ×400 で畳み込む）
+  const [goal, setGoal] = useState(
+    () => +(localStorage.getItem('kusuma-goal') ?? 0) || 0,
+  );
+  // v0.3: 自動保存した下書きの時刻（「下書き HH:MM」表示用）
+  const [draftAt, setDraftAt] = useState<string | null>(null);
+  // 起動時の下書き確認が済むまで自動保存を走らせない
+  // （確認前に空ドキュメントを保存して下書きを上書きするのを防ぐ）
+  const draftReadyRef = useRef(false);
   type Snap = {
     objects: WorldObject[];
     chains: Chain[];
@@ -205,6 +222,8 @@ export function App() {
     title: string;
     pageOpacity: number;
     docFont: string;
+    pageNum: boolean;
+    gridPrint: boolean;
   };
   const histRef = useRef<{ past: Snap[]; future: Snap[]; last: number }>({
     past: [],
@@ -486,6 +505,8 @@ export function App() {
     title: docTitle,
     pageOpacity,
     docFont,
+    pageNum,
+    gridPrint,
   });
   const applySnap = (s: Snap) => {
     applyingRef.current = true;
@@ -503,6 +524,8 @@ export function App() {
     setDocTitle(s.title);
     setPageOpacity(s.pageOpacity);
     setDocFont(s.docFont);
+    setPageNum(s.pageNum);
+    setGridPrint(s.gridPrint);
     snapRef.current = s;
     applyingRef.current = false;
   };
@@ -542,7 +565,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -552,6 +575,84 @@ export function App() {
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
+
+  // ── v0.3: 起動時の下書き復元 — IndexedDB に自動保存があり、
+  // 既定ドキュメントと異なる場合のみ復元する（同一なら何もしない。
+  // 確認が済むまで draftReadyRef で自動保存の書込みを止めておく） ──
+  useEffect(() => {
+    let alive = true;
+    void loadDraft().then((rec) => {
+      draftReadyRef.current = true;
+      if (!alive || !rec) return;
+      try {
+        const r = unpackArchive(rec.slm);
+        const blank = {
+          spec: initDoc.model.spec,
+          pages: initDoc.model.pages,
+          objects: initDoc.objects,
+          chains: initDoc.chains,
+          footer: true,
+          title: '',
+          pageOpacity: 50,
+          docFont: 'sans-serif',
+          pageNum: false,
+          gridPrint: true,
+        };
+        const cur = {
+          spec: r.model.spec,
+          pages: r.model.pages,
+          objects: r.objects,
+          chains: r.chains,
+          footer: r.footer,
+          title: r.title,
+          pageOpacity: r.pageOpacity,
+          docFont: r.docFont ?? 'sans-serif',
+          pageNum: r.pageNum,
+          gridPrint: r.gridPrint,
+        };
+        if (JSON.stringify(blank) === JSON.stringify(cur)) return;
+        applyArchive(r);
+        setDraftAt(rec.at);
+        flash(t('hint.draftRestored'));
+      } catch {
+        // 壊れた下書きは無視する（復元も削除もしない）
+      }
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine]);
+
+  // ── v0.3: 自動保存 — 変更のたびに 1.5s デバウンスで .slm と同じ
+  // 直列化（画像込みの完全な文書状態）を IndexedDB へ下書き保存する ──
+  useEffect(() => {
+    if (!draftReadyRef.current) return;
+    const id = window.setTimeout(() => {
+      try {
+        const u8 = packArchive({
+          spec: model.spec,
+          pages: model.pages,
+          objects: contentObjects(),
+          chains,
+          footer,
+          title: docTitle,
+          createdAt: createdAtRef.current,
+          pageOpacity,
+          docFont,
+          pageNum,
+          gridPrint,
+        });
+        void saveDraft(u8).then((at) => {
+          if (at) setDraftAt(at);
+        });
+      } catch {
+        // 直列化・保存の失敗は静かに諦める（次の変更で再試行される）
+      }
+    }, 1500);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint]);
 
   // F24: Alt 押下でスナップ（グリッド＋オブジェクト吸着）を一時解除
   useEffect(() => {
@@ -606,6 +707,8 @@ export function App() {
     setDocTitle('');
     setPageOpacity(50);
     setDocFont('sans-serif');
+    setPageNum(false);
+    setGridPrint(true);
     createdAtRef.current = new Date().toISOString();
     dirtyRef.current = false;
     engine.setSelection([]);
@@ -622,6 +725,8 @@ export function App() {
       createdAt: createdAtRef.current,
       pageOpacity,
       docFont,
+      pageNum,
+      gridPrint,
     });
     const a = document.createElement('a');
     const url = URL.createObjectURL(
@@ -636,45 +741,68 @@ export function App() {
     dirtyRef.current = false;
     setSaveDlg(null);
   };
+  // 書庫の展開結果をアプリ状態へ反映する（.slm 読込と下書き復元で共用）
+  const applyArchive = (r: ReturnType<typeof unpackArchive>) => {
+    // 過去バージョンで別グループへ同じ gN が振られて保存された
+    // 汚染を修復する — 同名グループをページ単位で分割し連番化
+    const prects = pageRects(r.model.spec, r.model.pages);
+    const gmap = new Map<string, string>();
+    let gn = 0;
+    const objects = r.objects.map((o) => {
+      if (!o.group) return o;
+      const cx = o.x + o.w / 2;
+      const cy = o.y + o.h / 2;
+      const pi = prects.findIndex(
+        (p) =>
+          cx >= p.x && cx < p.x + p.w && cy >= p.y && cy < p.y + p.h,
+      );
+      const key = `${o.group}@${pi}`;
+      let g = gmap.get(key);
+      if (!g) gmap.set(key, (g = `g${++gn}`));
+      return { ...o, group: g };
+    });
+    groupSeqRef.current = gn + 1;
+    commitPages(r.model, objects);
+    setChains(r.chains);
+    setWriteChainId(null);
+    setFooter(r.footer);
+    setDocTitle(r.title);
+    setPageOpacity(r.pageOpacity);
+    setDocFont(r.docFont ?? 'sans-serif');
+    setPageNum(r.pageNum);
+    setGridPrint(r.gridPrint);
+    createdAtRef.current = r.createdAt || new Date().toISOString();
+    dirtyRef.current = false;
+    engine.setSelection([]);
+    focusPage(0, r.model);
+  };
   const onOpenFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.currentTarget.files?.[0];
     e.currentTarget.value = '';
     if (!f) return;
     f.arrayBuffer()
-      .then((buf) => {
-        const r = unpackArchive(new Uint8Array(buf));
-        // 過去バージョンで別グループへ同じ gN が振られて保存された
-        // 汚染を修復する — 同名グループをページ単位で分割し連番化
-        const prects = pageRects(r.model.spec, r.model.pages);
-        const gmap = new Map<string, string>();
-        let gn = 0;
-        const objects = r.objects.map((o) => {
-          if (!o.group) return o;
-          const cx = o.x + o.w / 2;
-          const cy = o.y + o.h / 2;
-          const pi = prects.findIndex(
-            (p) =>
-              cx >= p.x && cx < p.x + p.w && cy >= p.y && cy < p.y + p.h,
-          );
-          const key = `${o.group}@${pi}`;
-          let g = gmap.get(key);
-          if (!g) gmap.set(key, (g = `g${++gn}`));
-          return { ...o, group: g };
-        });
-        groupSeqRef.current = gn + 1;
-        commitPages(r.model, objects);
-        setChains(r.chains);
-        setWriteChainId(null);
-        setFooter(r.footer);
-        setDocTitle(r.title);
-        setPageOpacity(r.pageOpacity);
-        setDocFont(r.docFont ?? 'sans-serif');
-        createdAtRef.current = r.createdAt || new Date().toISOString();
-        dirtyRef.current = false;
-        engine.setSelection([]);
-        focusPage(0, r.model);
-      })
+      .then((buf) => applyArchive(unpackArchive(new Uint8Array(buf))))
       .catch((err: Error) => flash(tf(t, 'hint.cantOpen', err.message)));
+  };
+
+  // 投稿用テキスト出力（v0.3）— 連鎖テキストを .txt で書き出す。
+  // ルビは正規形 ｜親字《ヨミ》 のみに揃えるため (- -) 糖衣は正規化する
+  // （なろう/カクヨム貼り付け互換 — 糖衣はあくまで入力補助で
+  // 提出形は正規形。複数連鎖は空行1行で接続する）
+  const exportText = () => {
+    const body = chains.map((c) => normalizeRuby(c.text)).join('\n\n');
+    const d = new Date();
+    const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const a = document.createElement('a');
+    const url = URL.createObjectURL(
+      // BOM 付き UTF-8 — Windows のメモ帳等で文字化けしないようにする
+      new Blob(['\uFEFF' + body], { type: 'text/plain;charset=utf-8' }),
+    );
+    a.href = url;
+    a.download = `${docTitle || 'document'}-${ymd}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    flash(t('hint.exported'));
   };
 
   // ── テキストエリア生成（用紙上ダブルクリック） ──
@@ -1218,11 +1346,19 @@ export function App() {
 
   const { spec } = model;
   const z = engine.viewport.zoom;
+  // v0.3: 総字数（status.chars・目標進捗で共用）— サロゲート対は1字
+  const totalChars = chains.reduce((n, c) => n + [...c.text].length, 0);
+  // 「下書き HH:MM」表示用の時刻整形
+  const fmtTime = (iso: string) => {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
 
   const renderObject = (o: WorldObject) => {
     if (o.kind === PAGE_KIND) {
       const d = o.data as { index: number };
       return (
+        <>
         <div
           className={d.index === curPage ? 'page-tag active nodrag' : 'page-tag nodrag'}
           onPointerDown={(e) => e.stopPropagation()}
@@ -1244,7 +1380,21 @@ export function App() {
             ×
           </button>
         </div>
-      );
+        {/* v0.3: ページ番号 — 文書設定 ON のとき版面下端中央にも出す
+            （印刷側 .pnum と同じ位置・同じ数え方） */}
+        {pageNum && (
+          <div
+            className="pnum-canvas nodrag"
+            style={{
+              bottom: 4 * MM_PX * z,
+              fontSize: Math.max(9, 10 * z),
+            }}
+          >
+            {d.index + 1}
+          </div>
+        )}
+      </>
+    );
     }
     if (o.kind === TEXT_KIND) {
       const d = { ...DEFAULT_TEXT_DATA, ...(o.data as TextAreaData) };
@@ -1406,6 +1556,7 @@ export function App() {
           onNew={newDoc}
           onOpen={() => openFileRef.current?.click()}
           onSave={() => setSaveDlg(docTitle || 'document')}
+          onExportText={exportText}
           onUndo={undo}
           onRedo={redo}
           canUndo={histRef.current.past.length > 0}
@@ -1792,6 +1943,12 @@ export function App() {
           onSelectChain={onPickChain}
           indent={indent}
           onIndent={onIndent}
+          goal={goal}
+          onGoal={(n) => {
+            // 正準値は字数（0 = 未設定）。枚数入力側は ×400 済みで来る
+            setGoal(n);
+            localStorage.setItem('kusuma-goal', String(n));
+          }}
           chainOverflow={
             dockChain ? (layouts.get(dockChain.id)?.overflow ?? '') : ''
           }
@@ -1894,6 +2051,10 @@ export function App() {
             onOpacity: setPageOpacity,
             font: docFont,
             onFont: setDocFont,
+            pageNum,
+            onPageNum: setPageNum,
+            gridPrint,
+            onGridPrint: setGridPrint,
           }}
           t={t}
         />
@@ -1905,11 +2066,16 @@ export function App() {
         <span className="sep" />
         {writeMode && (
           <span>
-            {tf(
-              t,
-              'status.chars',
-              chains.reduce((n, c) => n + [...c.text].length, 0),
-            )}
+            {tf(t, 'status.chars', totalChars)}
+            {/* v0.3: 目標字数のコンパクト進捗 */}
+            {goal > 0 &&
+              ` · ${tf(t, 'status.goalPct', Math.round((totalChars / goal) * 100))}`}
+          </span>
+        )}
+        {/* v0.3: 自動保存した下書きの時刻 */}
+        {draftAt && (
+          <span title={t('status.draftTip')}>
+            {tf(t, 'status.draft', fmtTime(draftAt))}
           </span>
         )}
         <span>{tf(t, 'status.pages', model.pages.length)}</span>
@@ -1925,6 +2091,8 @@ export function App() {
         <Printout
           model={model}
           footer={footer}
+          pageNum={pageNum}
+          gridPrint={gridPrint}
           objects={engine.doc.objects}
           sliceRuns={(o) => {
             const c = chainOf(chains, o.id);
