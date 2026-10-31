@@ -96,7 +96,7 @@ body,
 
 /* ── 左: メニューペイン（折りたたみ可） ── */
 .left-menu {
-  width: 118px;
+  width: 130px;
   flex: none;
   display: flex;
   flex-direction: column;

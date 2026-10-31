@@ -433,9 +433,8 @@ export function ChainPane({
           )}
         </div>
       )}
-      {/* 選択範囲への部分装飾（B/I/U・色・サイズ・書体・リンク）は
-          組版モードの仕事 — 執筆モードでは行ごと畳む（v0.6） */}
-      {!writeMode && (
+      {/* 選択範囲の B/I/U は執筆モードでも使う。色・サイズ・書体・
+          リンクは組版モードの仕事 — 執筆モードでは畳む（v0.6） */}
       <div className="chain-marks">
         <span className="chain-marks-label">{t('chain.mark')}</span>
         <button disabled={!hasSel} onClick={() => apply({ bold: true })}>
@@ -447,6 +446,8 @@ export function ChainPane({
         <button disabled={!hasSel} onClick={() => apply({ underline: true })}>
           U
         </button>
+        {!writeMode && (
+        <>
         <input
           type="color"
           disabled={!hasSel}
@@ -513,8 +514,9 @@ export function ChainPane({
         >
           {t('chain.markClear')}
         </button>
+        </>
+        )}
       </div>
-      )}
       {areaData && (
         <div className="chain-font">
           <label>
@@ -562,6 +564,9 @@ export function ChainPane({
               onChange={(e) => onAreaData({ color: e.currentTarget.value })}
             />
           </label>
+          {/* エリア全体の B/I/U は組版モードの仕事 — 執筆モードでは畳む */}
+          {!writeMode && (
+          <>
           <label>
             B
             <input
@@ -588,6 +593,8 @@ export function ChainPane({
               }
             />
           </label>
+          </>
+          )}
           {/* エリア単位リンクも組版モードの仕事 — 執筆モードでは畳む */}
           {!writeMode && (
           <label>
