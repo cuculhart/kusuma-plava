@@ -906,14 +906,9 @@ function DocProps({
           {t('doc.insertAfter')}{' '}
           <button onClick={() => onInsertAfter(ins)}>{t('doc.insert')}</button>
         </div>
-        <label>
-          <input
-            type="checkbox"
-            checked={footer}
-            onChange={(e) => onFooter(e.currentTarget.checked)}
-          />
-          {t('doc.footer')}
-        </label>
+        {/* フッター（n/全ページ）の切替は非表示 — 機能自体は休眠状態で残す
+            （footer/onFooter props は引き続き配線済み）。ノンブルの
+            チェックは残す */}
         <label>
           <input
             type="checkbox"

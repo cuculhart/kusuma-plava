@@ -149,7 +149,7 @@ function buildWritingDoc(font: string): {
   objects: WorldObject[];
   chains: Chain[];
 } {
-  const model = createPages({ size: 'A4', landscape: false }, 1);
+  const model = createPages({ size: 'A4', landscape: true }, 1);
   const p = pageRectAt(model.spec, 0);
   const m = HANMEN_MARGIN_MM;
   const areaId = 'ta1';
@@ -334,8 +334,9 @@ export function App() {
   const [indent, setIndent] = useState(
     () => localStorage.getItem('kusuma-indent') !== '0',
   );
-  // v0.3: ページ番号（ノンブル）— 文書設定。.slm の doc.json へ保存
-  const [pageNum, setPageNum] = useState(false);
+  // v0.3: ページ番号（ノンブル）— 文書設定。.slm の doc.json へ保存。
+  // 新規文書は既定 ON（書庫・下書きは保存値をそのまま使う）
+  const [pageNum, setPageNum] = useState(true);
   // v0.3: 升目の印刷出し分け — 文書設定。既定 ON（WYSIWYG 整合:
   // キャンバスに見える升目はそのまま印刷に出る）
   const [gridPrint, setGridPrint] = useState(true);
@@ -782,7 +783,7 @@ export function App() {
           title: '',
           pageOpacity: 50,
           docFont: DEFAULT_FONT_FAMILY,
-          pageNum: false,
+          pageNum: true,
           gridPrint: true,
           genko: { ...GENKO_GRID },
         };
@@ -897,7 +898,7 @@ export function App() {
     setDocTitle('');
     setPageOpacity(50);
     setDocFont(DEFAULT_FONT_FAMILY);
-    setPageNum(false);
+    setPageNum(true);
     setGridPrint(true);
     setGenko({ ...GENKO_GRID });
     createdAtRef.current = new Date().toISOString();
@@ -1512,8 +1513,9 @@ export function App() {
   const curPage = Math.min(activePage, Math.max(0, rects.length - 1));
   // G1+G2: ページが収まる倍率に調整して位置合わせする。
   // 執筆モードは用紙の縦でフィット（画面は用紙高さ基準）—
-  // 横は収まる範囲で中央寄せ、はみ出る大判は左上合わせ。
-  // 組版モードは従来通りページ全体が収まる倍率 + 左上合わせ。
+  // 横は用紙右端をキャンバス右端へ合わせる（縦書きの書き出し＝
+  // 右上の書字列が画面右へ来る配置）。組版モードは従来通り
+  // ページ全体が収まる倍率 + 左上合わせ。
   const focusPage = (i: number, mdl: PageModel = model) => {
     suppressDblUntil.current = performance.now() + 700;
     setActivePage(i);
@@ -1538,7 +1540,7 @@ export function App() {
       ...engine.viewport,
       zoom,
       x: writeModeRef.current
-        ? Math.max(pad, (el.clientWidth - p.w * u) / 2) - p.x * u
+        ? el.clientWidth - pad - (p.x + p.w) * u
         : pad - p.x * u,
       y: pad - p.y * u,
     };
