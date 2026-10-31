@@ -880,12 +880,13 @@ function DocProps({
             value={size}
             onChange={(e) => onSize(e.currentTarget.value as PaperSize)}
           >
-            {/* 日本の書物サイズを含む（文庫・新書は後発検討） */}
+            {/* 日本の書物サイズを含む（新書判は後発検討） */}
             <option value="A4">A4</option>
             <option value="A3">A3</option>
             <option value="B5">B5</option>
             <option value="B6">B6</option>
             <option value="A5">A5</option>
+            <option value="A6">A6</option>
           </select>
         </label>
         <label>
