@@ -1,63 +1,82 @@
 # Kusuma Plava（クスマ・プラヴァ）
 
-日本語: [README.ja.md](README.ja.md)
-
-A vertical-writing layout editor for Japanese documents — write
-horizontally, compose vertically. Linked text frames, image
-runaround, true millimeter printing.
+日本の小説家・教科書制作者のための縦書き執筆エディタ。
+左ペインで横書きに書くと、右の版面が縦書きの原稿用紙として
+レンダリングされていく。
 
 > 木漏れ日と花筏。文を書けば、組版が流れ出す。
 
-![Editing a document](doc/screenshot.png)
+変更履歴は [CHANGELOG](CHANGELOG.md) を参照（最新: v0.3.0）。
 
-See [CHANGELOG](CHANGELOG.md) for the release history (latest: v0.6.0).
+## 機能
 
-## Features
+- **執筆モード** — 横書きの執筆ペインと原稿用紙の2ペイン構成。
+  Enter で段落頭の字下げ（全角1字）、＊/◇の話区切り挿入、
+  選択範囲の B/I/U と書式解除
+- **原稿用紙** — ページ中央に配置される升目枠。既定は
+  縦20字×横20行（400字詰）。「升目 縦N字×横N行」を文書設定で
+  変更でき、字サイズは升目から自動決定される。線の色と透過も
+  変更可
+- **ルビ** — `｜親字《ヨミ》`（範囲明示）と `親字《ヨミ》`
+  （直前の漢字連続、なろう式）。入力糖衣 `親字(-ヨミ-)` と
+  `[-親字-] (-ヨミ-)` も受理
+- **半角** — 短い連続は縦中横、長い連続は1字1マスの回転表示
+- **禁則** — 行頭禁則（句読点・中点・感嘆疑問・閉じ括弧・
+  長音繰返し・小さい仮名ほか）と行末禁則（開き括弧）を
+  実務ルール準拠で処理
+- **文字数** — 総字数・選択範囲・400字換算枚数。目標字数と
+  進捗バー。ステータスバーに版面の升目（縦×横）を常時表示
+- **自動保存** — 1.5秒デバウンスで IndexedDB に完全な文書状態
+  を保存。起動時に下書きを復元
+- **検索・置換** — Ctrl+F で検索バー、次/前・1件/全置換
+- **テキスト出力** — なろう・カクヨム提出用のプレーンテキスト
+  （糖衣は `｜《》` に正規化、UTF-8 BOM）
+- **用紙** — A4横が既定（A3/B5/B6/A5・縦横変更可）。ページ番号
+  （ノンブル・下中央）、升目の印刷出し分け、用紙透過
+- **フォント** — 既定は Noto Serif JP。システムフォントを列挙。
+  1字1マスはフォントのメトリクスに依存しない実装
+- **テーマ** — 標準（OS連動）/ 白 / 黒 / 静（紙調の執筆テーマ）
+- **組版モード** — レイアウト編集（テキスト連鎖・画像・
+  シェイプ・整列）へ切替可能
+- **.slm 書庫** — zip 形式（doc.json＋画像バイナリ）。
+  完全ローカルで外部送信なし
 
-- **True-size pages on a canvas** — A4/A3 portrait/landscape frames stacked vertically in world-millimeter coordinates; scrolling is page turning. Swapping paper size leaves object coordinates untouched
-- **Linked text frames** — text flows tail → head through wire links across areas and pages. Overflow badges, chain edit pane, rollback unlink, mid-chain insertion
-- **Shapes** — rectangle, ellipse, line, and click-vertex curve input (Enter/double-click to commit). Vertex grips, arrow/dot caps, dash styles, fill & stroke with alpha, border ON/OFF
-- **Images** — file pick → true-size ghost → click to place; mm editing and aspect-ratio lock (live corner-drag constraint)
-- **Multi-selection workflow** — Ctrl+D / Ctrl+C/V duplicate & copy-paste, grouping with click-through member editing, align & distribute
-- **Text styling** — font, size, bold/italic/underline/color, and horizontal/vertical alignment on standalone areas
-- **Undo / Redo** — unified snapshots of doc + chains + pages + settings (Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y)
-- **True-size printing** — in-app print preview plus the browser's own print dialog; dynamic `@page` and page-number footer
-- **.slm archives** — zip format (doc.json + image binaries). Fully local — nothing is sent anywhere
-- **UI in English & Japanese**, 4 themes, 5mm grid + 10mm majors with snapping (Alt disables)
-
-## Getting started
+## 使い方
 
 ```bash
 git clone https://github.com/cuculhart/kusuma-plava.git
-
+cd kusuma-plava
 npm install
 npm run dev       # http://localhost:5173
-npm run build     # production build → app/dist/
+npm run build     # 本番ビルド → app/dist/
 npm run typecheck
 npm test
 ```
 
-React 19 + TypeScript + Vite + [Kimetron Isle](https://github.com/cuculhart/kimetron)
-(vendored in `kimetron/`) + [inimbal](inimbal/) text-flow
-layer + fflate.
+## ルビ記法
 
-## Basic usage
-
-| Goal | How |
+| 入力 | 効果 |
 |---|---|
-| New text area | Double-click on the paper |
-| Link areas | "Link mode" → click chain tail → another chain's head |
-| Add a shape | Rect / ellipse / line / curve tool — curve places anchors per click (Enter or double-click commits) |
-| Group / ungroup | Right-click a selection → Group / Ungroup |
-| Duplicate | Ctrl+D or Ctrl+C/V — grids-step offset, keeps style |
-| Align | Multi-select → Align & distribute in the inspector |
-| Print | "Print" menu → preview → browser print |
+| `漢字《かんじ》` | 直前の漢字連続にルビ |
+| `｜少年的な謎の生き物《フラクトギャルソン》` | 範囲を明示したルビ |
+| `運命(-さだめ-)` | 糖衣 → `運命《さだめ》` に正規化 |
+| `[-未来-] (-みらい-)` | 糖衣の範囲明示形 |
 
-## Name
+## 技術構成
 
-`kusuma` is Sanskrit for flower; `plava` is Sanskrit for raft —
-"flower-raft" (花筏): fallen petals gathering on the stream to form
-a raft, as text flows into a composed page. Forked from
-[Silim Murlun](https://github.com/cuculhart/silim-murlun).
-`inimbal`, the text-flow layer, comes from `inim` (word) + `bal`
-(cross over).
+React + TypeScript + Vite。
+組版は [inimbal](inimbal/)（純粋モデルの文字送り層 — 縦版 fit() は
+単位カウントで、計測と描画が同じトークナイザを共有）、
+描画エンジンに kimetron（`kimetron/` に vendored 同梱）、
+書庫 zip に fflate。
+
+## 名前の由来
+
+`kusuma`（サンスクリット: 花）＋ `plava`（筏）= 花筏。
+桜の花びらが川面を流れていくさま。
+
+silim-murlun v0.8.1（MIT）からのフォーク。
+
+## ライセンス
+
+MIT
