@@ -223,6 +223,11 @@ export function RightDock({
     onGridPrint: (on: boolean) => void;
     /** v0.3: 版面に収まる升目数（v=段あたり字数・h=段数） */
     hanmenCells: { v: number; h: number };
+    /** v0.3: 400字詰めプリセットで適用される字サイズ（mm）。
+        適用先エリアが無い・算出不能なら null（ボタン無効） */
+    fit400fs: number | null;
+    /** v0.3: 字サイズを版面 20×20 に合わせる */
+    onFit400: () => void;
   };
   t: TFunc;
 }) {
@@ -747,6 +752,8 @@ function DocProps({
   gridPrint,
   onGridPrint,
   hanmenCells,
+  fit400fs,
+  onFit400,
   t,
 }: {
   title: string;
@@ -769,6 +776,8 @@ function DocProps({
   gridPrint: boolean;
   onGridPrint: (on: boolean) => void;
   hanmenCells: { v: number; h: number };
+  fit400fs: number | null;
+  onFit400: () => void;
   t: TFunc;
 }) {
   const [ins, setIns] = useState(1);
@@ -810,6 +819,20 @@ function DocProps({
         <div title={t('status.hanmenTip')}>
           {t('doc.hanmen')}: {tf(t, 'doc.hanmenVal', hanmenCells.v, hanmenCells.h)}
         </div>
+        {/* v0.3: 400字詰めプリセット — 代表エリア（連鎖先頭→auto）
+            の字サイズを版面 20×20 に合わせる。升目表示と同じ
+            hanmenBox 計算で算出した mm をツールチップに出す */}
+        <button
+          disabled={fit400fs == null}
+          title={tf(
+            t,
+            'doc.fit400Tip',
+            fit400fs != null ? +fit400fs.toFixed(2) : '—',
+          )}
+          onClick={onFit400}
+        >
+          {t('doc.fit400')}
+        </button>
         <div>
           {pageCount}
           {t('doc.pages')} <button onClick={onAddPage}>{t('doc.add')}</button>

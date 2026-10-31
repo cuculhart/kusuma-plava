@@ -29,6 +29,7 @@ import {
   type LayoutResult,
   type PageModel,
   type PaperSize,
+  type PaperSpec,
   type TextAttrs,
 } from 'inimbal';
 import { RightDock } from './Inspector';
@@ -88,6 +89,17 @@ function syncSnapExtra(engine: Engine, model: PageModel): void {
     用紙変更時の追従計算（refitWritingAreas）で共用する規約。
     天/地/小口/ノド一律 */
 const HANMEN_MARGIN_MM = 20;
+
+/** 版面の実効内寸（mm）= 用紙 − 四方 HANMEN_MARGIN_MM − エリア内側
+    余白 TEXT_PAD_MM。升目数（hanmenCells 表示）と 400字詰め
+    プリセットで同じ箱を共有するためのヘルパ。 */
+function hanmenBox(spec: PaperSpec): { bw: number; bh: number } {
+  const { w, h } = paperDims(spec);
+  return {
+    bw: w - 2 * (HANMEN_MARGIN_MM + TEXT_PAD_MM),
+    bh: h - 2 * (HANMEN_MARGIN_MM + TEXT_PAD_MM),
+  };
+}
 
 /** 執筆モード既定ドキュメント（v0.2）— 第1ページの版面
     （上下左右 HANMEN_MARGIN_MM マージン）を覆う縦書き
@@ -1418,17 +1430,36 @@ export function App() {
     : DEFAULT_TEXT_DATA.fontSize;
   // fitVertical に渡る実効ボックスと同じ内寸で割る — 版面矩形
   // （用紙 − HANMEN_MARGIN_MM 四方）からエリア内側余白 TEXT_PAD_MM を
-  // 引いた幅・高さ。段ピッチ = fontSize × (1 + RUBY_LANE_RATIO)。
+  // 引いた幅・高さ（hanmenBox 参照）。段ピッチ =
+  // fontSize × (1 + RUBY_LANE_RATIO)。
   const hanmenCells = (() => {
-    const { w, h } = paperDims(spec);
-    const bw = w - 2 * (HANMEN_MARGIN_MM + TEXT_PAD_MM);
-    const bh = h - 2 * (HANMEN_MARGIN_MM + TEXT_PAD_MM);
+    const { bw, bh } = hanmenBox(spec);
     const pitch = cellFs * (1 + RUBY_LANE_RATIO);
     return {
       v: Math.max(0, Math.floor((bh + 1e-6) / cellFs)),
       h: Math.max(0, Math.floor((bw + 1e-6) / pitch)),
     };
   })();
+
+  // ── v0.3: 「400字詰め」プリセット ──
+  // 升目が 縦20字×横20行（=400字/枚）に収まる字サイズ
+  //   fs = min(版面高/20, 版面幅/(20×(1+RUBY_LANE_RATIO)))
+  // min なので拘束する次元がちょうど20、もう一方は20以上を保証
+  // （A4縦なら段ピッチが効いて fs≈5.25mm → 縦48×横20）。極端な値
+  // （小さな用紙で <1mm 等）もそのまま適用する — 0以下・非有限のみ
+  // 抑止。適用先は升目計算と同じ代表エリア（連鎖先頭 → data.auto
+  // 順の cellArea）。部分書式の fontSize マークは触らずエリア既定の
+  // み更新 — Inspector サイズ欄と同じ patchAreaData 経路で
+  // 再レイアウトされる。
+  const fit400fs = (() => {
+    const { bw, bh } = hanmenBox(spec);
+    const fs = Math.min(bh / 20, bw / (20 * (1 + RUBY_LANE_RATIO)));
+    return Number.isFinite(fs) && fs > 0 ? fs : null;
+  })();
+  const fit400 = () => {
+    if (fit400fs == null || !cellArea) return;
+    patchAreaData(cellArea.id, { fontSize: fit400fs });
+  };
 
   const renderObject = (o: WorldObject) => {
     if (o.kind === PAGE_KIND) {
@@ -2132,6 +2163,8 @@ export function App() {
             gridPrint,
             onGridPrint: setGridPrint,
             hanmenCells,
+            fit400fs: cellArea ? fit400fs : null,
+            onFit400: fit400,
           }}
           t={t}
         />

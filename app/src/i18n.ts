@@ -130,6 +130,9 @@ const ja = {
   'doc.gridPrint': '升目を印刷に出す',
   'doc.hanmen': '版面マス',
   'doc.hanmenVal': '縦$1×横$2',
+  'doc.fit400': '400字詰に合わせる',
+  'doc.fit400Tip':
+    '字サイズを版面 縦20字×横20行（=400字/枚）に合わせます — 約$1mm（部分書式は変えません）',
   'doc.opacity': '用紙の透過',
   'doc.hint': '未選択 / 複数選択 — オブジェクトを選ぶとプロパティが出ます',
   'img.title': '画像',
@@ -330,6 +333,9 @@ const en: Record<keyof typeof ja, string> = {
   'doc.gridPrint': 'Print the grid',
   'doc.hanmen': 'Cells',
   'doc.hanmenVal': '$1 × $2',
+  'doc.fit400': 'Fit 400-char grid',
+  'doc.fit400Tip':
+    'Fit the font size so the grid is 20 chars × 20 columns (=400 chars/sheet) — ≈$1mm (per-run marks unchanged)',
   'doc.opacity': 'Paper opacity',
   'doc.hint': 'Nothing / multiple selected — select an object for properties',
   'img.title': 'Image',
