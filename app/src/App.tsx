@@ -16,6 +16,7 @@ import {
   layoutChain,
   linkChains,
   normalizeRuby,
+  paperDims,
   pageRectAt,
   pageRects,
   pruneChains,
@@ -1403,6 +1404,32 @@ export function App() {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
+  // ── v0.3: 版面の升目数（「版面 縦N×横N」表示・文書設定で共用） ──
+  // 字サイズは執筆エリア（連鎖先頭）のもの。無ければ版面自動生成
+  // エリア（data.auto）、それも無ければ文書既定にフォールバック。
+  const cellArea =
+    writeArea ??
+    engine.doc.objects.find(
+      (o) => o.kind === TEXT_KIND && (o.data as TextAreaData | undefined)?.auto,
+    ) ??
+    null;
+  const cellFs = cellArea
+    ? { ...DEFAULT_TEXT_DATA, ...(cellArea.data as TextAreaData) }.fontSize
+    : DEFAULT_TEXT_DATA.fontSize;
+  // fitVertical に渡る実効ボックスと同じ内寸で割る — 版面矩形
+  // （用紙 − HANMEN_MARGIN_MM 四方）からエリア内側余白 TEXT_PAD_MM を
+  // 引いた幅・高さ。段ピッチ = fontSize × (1 + RUBY_LANE_RATIO)。
+  const hanmenCells = (() => {
+    const { w, h } = paperDims(spec);
+    const bw = w - 2 * (HANMEN_MARGIN_MM + TEXT_PAD_MM);
+    const bh = h - 2 * (HANMEN_MARGIN_MM + TEXT_PAD_MM);
+    const pitch = cellFs * (1 + RUBY_LANE_RATIO);
+    return {
+      v: Math.max(0, Math.floor((bh + 1e-6) / cellFs)),
+      h: Math.max(0, Math.floor((bw + 1e-6) / pitch)),
+    };
+  })();
+
   const renderObject = (o: WorldObject) => {
     if (o.kind === PAGE_KIND) {
       const d = o.data as { index: number };
@@ -2104,6 +2131,7 @@ export function App() {
             onPageNum: setPageNum,
             gridPrint,
             onGridPrint: setGridPrint,
+            hanmenCells,
           }}
           t={t}
         />
@@ -2119,6 +2147,12 @@ export function App() {
             {/* v0.3: 目標字数のコンパクト進捗 */}
             {goal > 0 &&
               ` · ${tf(t, 'status.goalPct', Math.round((totalChars / goal) * 100))}`}
+          </span>
+        )}
+        {/* v0.3: 版面に収まる升目数（縦=段あたり字数・横=段数） */}
+        {writeMode && (
+          <span title={t('status.hanmenTip')}>
+            {tf(t, 'status.hanmen', hanmenCells.v, hanmenCells.h)}
           </span>
         )}
         {/* v0.3: 自動保存した下書きの時刻 */}

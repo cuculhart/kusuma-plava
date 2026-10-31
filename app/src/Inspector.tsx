@@ -221,6 +221,8 @@ export function RightDock({
     /** v0.3: 升目を印刷に出すか */
     gridPrint: boolean;
     onGridPrint: (on: boolean) => void;
+    /** v0.3: 版面に収まる升目数（v=段あたり字数・h=段数） */
+    hanmenCells: { v: number; h: number };
   };
   t: TFunc;
 }) {
@@ -744,6 +746,7 @@ function DocProps({
   onPageNum,
   gridPrint,
   onGridPrint,
+  hanmenCells,
   t,
 }: {
   title: string;
@@ -765,6 +768,7 @@ function DocProps({
   onPageNum: (on: boolean) => void;
   gridPrint: boolean;
   onGridPrint: (on: boolean) => void;
+  hanmenCells: { v: number; h: number };
   t: TFunc;
 }) {
   const [ins, setIns] = useState(1);
@@ -802,6 +806,10 @@ function DocProps({
           <input type="checkbox" checked={landscape} onChange={onLandscape} />
           {t('doc.landscape')}
         </label>
+        {/* v0.3: 版面に収まる升目数（用紙・向き・字サイズに追従） */}
+        <div title={t('status.hanmenTip')}>
+          {t('doc.hanmen')}: {tf(t, 'doc.hanmenVal', hanmenCells.v, hanmenCells.h)}
+        </div>
         <div>
           {pageCount}
           {t('doc.pages')} <button onClick={onAddPage}>{t('doc.add')}</button>
