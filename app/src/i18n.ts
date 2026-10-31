@@ -197,7 +197,7 @@ const ja = {
   'page.landscape': '横',
   'page.portrait': '縦',
   'status.pages': '$1ページ',
-  'theme.standard': '標準（OS連動）',
+  'theme.standard': '標準',
   'theme.light': '白',
   'theme.dark': '黒',
   'theme.quiet': '静',
