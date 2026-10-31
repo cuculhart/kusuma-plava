@@ -391,17 +391,13 @@ body,
   background-position: top right;
   background-image:
     /* 段ごとの構造（右→左＝block-start→end）:
-       [ルビ欄 --lane][字セル --cell]。升目線はセル両端、
-       ルビ欄線は欄中央の薄線1本。字はセル内へ収まる */
+       [ルビ欄 --lane][字セル --cell]。升目線はセル両端のみ、
+       ルビ欄は実際の原稿用紙同様に無線の空白帯 */
     repeating-linear-gradient(
       to left,
       var(--grid-line) 0,
       var(--grid-line) 1px,
       transparent 1px,
-      transparent calc(var(--lane) / 2),
-      var(--lane-line) calc(var(--lane) / 2),
-      var(--lane-line) calc(var(--lane) / 2 + 1px),
-      transparent calc(var(--lane) / 2 + 1px),
       transparent var(--lane),
       var(--grid-line) var(--lane),
       var(--grid-line) calc(var(--lane) + 1px),
