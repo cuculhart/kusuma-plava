@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ruby lane repro — final CSS (styles.css v0.4 fix)</title>
+<style>
+  :root { --cell: 28px; --lane: 16.8px; --pitch: 44.8px; }
+  body { font-family: "Noto Serif JP", "Yu Mincho", serif; margin: 0;
+         display: flex; gap: 30px; padding: 16px; }
+  /* ── app: .ta-slice.vt の再現 ── */
+  .box {
+    writing-mode: vertical-rl;
+    height: 280px;
+    font-size: var(--cell);
+    line-height: var(--pitch);
+    letter-spacing: 0;
+    font-variant-east-asian: full-width;
+    text-spacing-trim: space-all;
+    text-align: start;
+    border: 1px solid #888;
+    width: calc(var(--pitch) * 3 + 2px);
+    position: relative;
+    overflow: hidden;
+    white-space: pre-wrap;
+  }
+  rt { font-size: 52%; }
+  .vc { display: inline-block; inline-size: 1em; text-align: center; }
+  /* ── app: styles.css の .vr/.vr rt（fix 後） ── */
+  .vr {
+    display: inline-block;
+    position: relative;
+    block-size: var(--pitch);
+    text-align: center;
+  }
+  .vr rt {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: 0;
+    block-size: var(--lane);
+    line-height: var(--lane);
+    text-align: center;
+    white-space: nowrap;
+  }
+  /* ── app: .vseg（回しこみ区間）の再現 ── */
+  .vseg {
+    position: absolute;
+    writing-mode: vertical-rl;
+    line-height: var(--pitch);
+    overflow: hidden;
+  }
+  .out { font: 12px/1.5 monospace; white-space: pre; }
+</style>
+</head>
+<body>
+<div class="box" id="t0"><span class="vc">あ</span><span class="vc">い</span><span class="vc">う</span><span class="vc">え</span><span class="vc">お</span><span class="vc">か</span><span class="vc">き</span><span class="vc">く</span><span class="vc">け</span><span class="vc">こ</span><span class="vc">さ</span><span class="vc">し</span><span class="vc">す</span><span class="vc">せ</span><span class="vc">そ</span><span class="vc">た</span><span class="vc">ち</span><span class="vc">つ</span><span class="vc">て</span><span class="vc">と</span><span class="vc">な</span><span class="vc">に</span><span class="vc">ぬ</span><span class="vc">ね</span><span class="vc">の</span></div>
+<div class="box" id="t5"><span class="vc">あ</span><span class="vc">い</span><span class="vc">う</span><span class="vc">え</span><span class="vc">お</span><span class="vc">か</span><span class="vc">き</span><span class="vr" style="inline-size:2em"><ruby><span class="vc">緑</span><span class="vc">華</span><rt>りょくか</rt></ruby></span><span class="vc">こ</span><span class="vc">さ</span><span class="vc">し</span><span class="vc">す</span><span class="vc">せ</span><span class="vc">そ</span><span class="vc">た</span><span class="vc">ち</span><span class="vc">つ</span><span class="vc">て</span><span class="vc">と</span><span class="vc">な</span><span class="vc">に</span><span class="vc">ぬ</span><span class="vc">ね</span><span class="vc">の</span></div>
+<!-- vseg: 段全体を1区間として絶対配置 + overflow:hidden（ruby は col0 内） -->
+<div class="box" id="t6"><div class="vseg" style="top:0;height:280px;right:0;width:44.8px"><span class="vc">あ</span><span class="vc">い</span><span class="vc">う</span><span class="vc">え</span><span class="vc">お</span><span class="vc">か</span><span class="vc">き</span><span class="vr" style="inline-size:2em"><ruby><span class="vc">緑</span><span class="vc">華</span><rt>りょくか</rt></ruby></span><span class="vc">こ</span></div><div class="vseg" style="top:0;height:280px;right:44.8px;width:44.8px"><span class="vc">さ</span><span class="vc">し</span><span class="vc">す</span><span class="vc">せ</span><span class="vc">そ</span><span class="vc">た</span><span class="vc">ち</span><span class="vc">つ</span><span class="vc">て</span><span class="vc">と</span></div></div>
+<!-- 長いヨミ（1字親字に7字）-->
+<div class="box" id="t7"><span class="vc">あ</span><span class="vc">い</span><span class="vc">う</span><span class="vc">え</span><span class="vc">お</span><span class="vc">か</span><span class="vc">き</span><span class="vr" style="inline-size:1em"><ruby><span class="vc">山</span><rt>やまがたけん</rt></ruby></span><span class="vc">こ</span><span class="vc">さ</span><span class="vc">し</span><span class="vc">す</span><span class="vc">せ</span><span class="vc">そ</span><span class="vc">た</span><span class="vc">ち</span><span class="vc">つ</span><span class="vc">て</span><span class="vc">と</span><span class="vc">な</span><span class="vc">に</span><span class="vc">ぬ</span><span class="vc">ね</span><span class="vc">の</span></div>
+<div class="out" id="out"></div>
+<script>
+function dump(id) {
+  const box = document.getElementById(id);
+  const br = box.getBoundingClientRect();
+  const lines = ['=== ' + id + ' (content right=' + (br.right-1).toFixed(1) + ') ==='];
+  const els = box.querySelectorAll('.vc, .vr');
+  els.forEach((el, i) => {
+    const r = el.getBoundingClientRect();
+    lines.push(i + ':' + el.textContent.slice(0,2) +
+      ' x=' + r.x.toFixed(1) + ' w=' + r.width.toFixed(1) +
+      ' y=' + r.y.toFixed(1) + ' h=' + r.height.toFixed(1));
+  });
+  const rt = box.querySelector('rt');
+  if (rt) { const r = rt.getBoundingClientRect();
+    lines.push('RT x=' + r.x.toFixed(1) + ' w=' + r.width.toFixed(1) +
+      ' y=' + r.y.toFixed(1) + ' h=' + r.height.toFixed(1)); }
+  return lines.join('\n');
+}
+document.getElementById('out').textContent =
+  ['t0','t5','t6','t7'].map(dump).join('\n\n');
+</script>
+</body>
+</html>

@@ -416,7 +416,10 @@ body,
   background-image: none;
 }
 
-/* ルビのヨミ — 主線より小さく（段のルビ欄に載る想定） */
+/* ルビのヨミ — 主線より小さく（段のルビ欄に載る想定）。
+   .vr 内ではネイティブの <rt> 組版は使わず下の .vr rt でルビ欄へ
+   絶対配置する（親字+注釈のペア重心合わせで親字が升目からずれ、
+   注釈の張り出しが段のラインボックスを拡げて段ピッチを壊すため） */
 .ta-slice.vt rt,
 .parea.vt rt {
   font-size: 52%;
@@ -448,12 +451,33 @@ body,
 }
 
 /* ルビ単位 — 進行を親字数ぶんに固定（inline-size は vtrender が
-   em×親字数で inline 指定）。長いヨミはルビ欄・上下へ張り出してよいが
-   進行方向へは隣の単位を押し出さない */
+   em×親字数で inline 指定）、ブロック方向（段の厚み）も段ピッチに
+   固定。position:relative は .vr rt の絶対配置基準。
+   長いヨミはルビ欄・上下へ張り出してよいが進行方向へは隣の単位を
+   押し出さない */
 .ta-slice.vt .vr,
 .parea.vt .vr {
   display: inline-block;
+  position: relative;
+  block-size: var(--pitch);
   text-align: center;
+}
+
+/* ルビのヨミ — 親字の block-start 側（右側＝前段との段間ルビ欄）へ
+   絶対配置で重ねる。ブロック幅はルビ欄 --lane ぴったり、行内は親字の
+   全高いっぱいにして text-align:center でヨミを親字へ垂直中央寄せ。
+   絶対配置なのでヨミのはみ出しはレイアウト（升目・段ピッチ）へ
+   一切影響しない。nowrap で長いヨミが折り返して親字へ
+   重ならないようにする（はみ出しは中央寄せで上下両端へ伸びる） */
+.ta-slice.vt .vr rt,
+.parea.vt .vr rt {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 0;
+  block-size: var(--lane);
+  line-height: var(--lane);
+  text-align: center;
+  white-space: nowrap;
 }
 
 /* v0.4: 回しこみ — layoutVertical の区間計画どおりに段区間を絶対配置。
