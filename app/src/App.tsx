@@ -308,7 +308,9 @@ export function App() {
     () => (localStorage.getItem('kusuma-lang') as Lang) || 'ja',
   );
   const t = makeT(lang);
-  const [pageOpacity, setPageOpacity] = useState(50);
+  // 用紙の透過 — 既定 75%（新規文書・初期起動）。書庫・下書き・
+  // 履歴スナップには値ごと保存されるため復元時は保存値が優先される
+  const [pageOpacity, setPageOpacity] = useState(75);
   const [footer, setFooter] = useState(true);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activePage, setActivePage] = useState(0);
@@ -795,7 +797,7 @@ export function App() {
           chains: initDoc.chains,
           footer: true,
           title: '',
-          pageOpacity: 50,
+          pageOpacity: 75,
           docFont: DEFAULT_FONT_FAMILY,
           pageNum: true,
           gridPrint: true,
@@ -916,7 +918,7 @@ export function App() {
     setWriteChainId(null);
     setFooter(true);
     setDocTitle('');
-    setPageOpacity(50);
+    setPageOpacity(75);
     setDocFont(DEFAULT_FONT_FAMILY);
     setPageNum(true);
     setGridPrint(true);

@@ -49,7 +49,7 @@ export function ChainPane({
   /** 連鎖タブ（複数連鎖時の切替 + 連鎖別字数）。未指定なら非表示 */
   chains?: Chain[];
   onPickChain?: (chainId: string) => void;
-  /** 執筆モード — 選択範囲装飾行と字サイズ欄を畳む（v0.6。
+  /** 執筆モード — 選択範囲装飾行・字サイズ欄・エリアリンクを畳む（v0.6。
       字サイズは文書設定の升目仕様が自動決定するため触らせない） */
   writeMode?: boolean;
   t: TFunc;
@@ -588,6 +588,8 @@ export function ChainPane({
               }
             />
           </label>
+          {/* エリア単位リンクも組版モードの仕事 — 執筆モードでは畳む */}
+          {!writeMode && (
           <label>
             {t('chain.areaLink')}
             <input
@@ -605,6 +607,7 @@ export function ChainPane({
               }}
             />
           </label>
+          )}
         </div>
       )}
       <footer className="chain-links">

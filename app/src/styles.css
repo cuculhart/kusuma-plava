@@ -76,6 +76,7 @@ body,
   --shadow: rgba(60, 50, 30, 0.12);
   --ki-grid: rgba(120, 110, 90, 0.07);
   --ki-grid-major: rgba(120, 110, 90, 0.15);
+  --ki-sel: #8f8098;
   --ki-edge-line: #a8a396;
 }
 

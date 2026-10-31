@@ -106,7 +106,9 @@ export function MenuPane({
         <span className="m-ic">≡</span>
         {!collapsed && (
           <span className="m-label">
-            Kusuma Plava <span className="m-ver">v0.3.0</span>
+            Kusuma Plava
+            <br />
+            <span className="m-ver">v0.3.0</span>
           </span>
         )}
       </button>
@@ -115,7 +117,8 @@ export function MenuPane({
         title: t('menu.modeTip'),
         enIc: 'W',
       })}
-      {item('Aa', t('menu.lang'), onLang, { title: t('menu.langTip') })}
+      {/* 言語切替は日本語専用プロダクトのため廃止（en辞書・onLang/lang
+          配管は残置 — 英語アイコン enIc 分岐などがまだ参照する） */}
       {item('新', t('menu.new'), onNew, { enIc: 'N' })}
       {item('開', t('menu.openDoc'), onOpen, { enIc: 'O' })}
       {item('存', t('menu.save'), onSave, {
