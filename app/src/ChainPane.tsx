@@ -172,9 +172,12 @@ export function ChainPane({
   const pick = (i: number) => {
     const el = taRef.current;
     if (!el || i < 0 || i >= hits.length) return;
-    // 一致を textarea の選択範囲にする（最も安い現在地の可視化）
+    // 一致を textarea の選択範囲にする（最も安い現在地の可視化）。
+    // ボタンクリックでフォーカスがボタンへ奪われるため focus() を
+    // 戻す — Chrome は focus 時にキャレット位置へスクロールもする
     el.selectionStart = hits[i];
     el.selectionEnd = hits[i] + query.length;
+    el.focus();
     setCurHit(i);
   };
   const goNext = () => {
@@ -301,6 +304,7 @@ export function ChainPane({
           <button
             title={t('find.prev')}
             disabled={!hits.length}
+            onMouseDown={(e) => e.preventDefault()}
             onClick={goPrev}
           >
             ↑
@@ -308,6 +312,7 @@ export function ChainPane({
           <button
             title={t('find.next')}
             disabled={!hits.length}
+            onMouseDown={(e) => e.preventDefault()}
             onClick={goNext}
           >
             ↓
