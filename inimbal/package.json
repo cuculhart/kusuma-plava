@@ -1,7 +1,7 @@
 {
   "name": "inimbal",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "INIMBAL — a stratum on Kimetron Isle. Text-chain flow: ordered linked frames, greedy distribution, rewind on unlink.",
   "type": "module",
   "exports": {
