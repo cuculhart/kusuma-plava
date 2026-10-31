@@ -140,6 +140,12 @@ function MmFields({
 export function RightDock({
   selObjs,
   chain,
+  writeMode,
+  writeArea,
+  chains,
+  onSelectChain,
+  indent,
+  onIndent,
   chainOverflow,
   onChainText,
   onApplyMark,
@@ -160,6 +166,16 @@ export function RightDock({
 }: {
   selObjs: WorldObject[];
   chain: Chain | null;
+  /** 執筆モード（v0.2）— ペインは連鎖エディタのみ、レイアウト欄を畳む */
+  writeMode: boolean;
+  /** 執筆モードで連鎖の代表に使うエリア（先頭。fontData の対象） */
+  writeArea: WorldObject | null;
+  /** 連鎖タブ（複数連鎖の切替 + 連鎖別字数） */
+  chains: Chain[];
+  onSelectChain: (chainId: string) => void;
+  /** 字下げ設定（Enter で段落頭に全角スペース） */
+  indent: boolean;
+  onIndent: (v: boolean) => void;
   chainOverflow: string;
   onChainText: (text: string) => void;
   /** 連鎖テキスト [s,e) への部分装飾適用 */
@@ -203,7 +219,30 @@ export function RightDock({
   const shapes = selObjs.filter(isShape);
 
   let body: React.ReactNode;
-  if (one?.kind === TEXT_KIND && chain) {
+  if (writeMode) {
+    // 執筆モード — 連鎖エディタだけを大きく。レイアウト系
+    // （mm 数値・揃え・Z-order・連鎖追加）は組版モード側の仕事
+    body = chain ? (
+      <ChainPane
+        chain={chain}
+        areaData={(writeArea?.data as TextAreaData | undefined) ?? null}
+        overflow={chainOverflow}
+        onText={onChainText}
+        onApplyMark={onApplyMark}
+        onClearMarks={onClearMarks}
+        onAreaData={onAreaData}
+        onClose={onDeselect}
+        indent={indent}
+        onIndent={onIndent}
+        chains={chains}
+        onPickChain={onSelectChain}
+        t={t}
+      />
+    ) : (
+      // 連鎖が無い書庫は文書プロパティへフォールバック
+      <DocProps {...docProps} t={t} />
+    );
+  } else if (one?.kind === TEXT_KIND && chain) {
     body = (
       <>
         <ChainPane
@@ -215,6 +254,10 @@ export function RightDock({
           onClearMarks={onClearMarks}
           onAreaData={onAreaData}
           onClose={onDeselect}
+          indent={indent}
+          onIndent={onIndent}
+          chains={chains}
+          onPickChain={onSelectChain}
           t={t}
         />
         <div className="sub-props">
@@ -307,7 +350,7 @@ export function RightDock({
   } else {
     body = <DocProps {...docProps} t={t} />;
   }
-  if (selObjs.length > 1) {
+  if (!writeMode && selObjs.length > 1) {
     body = (
       <>
         {body}

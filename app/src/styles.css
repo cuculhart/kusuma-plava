@@ -594,6 +594,87 @@ body,
   border-top: 1px solid var(--line);
 }
 
+/* ── 執筆ツール（v0.2: 話区切り / 字下げ / 字数） ── */
+.chain-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
+.chain-tools button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.chain-tools label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--text);
+}
+
+/* 字数（総字数・原稿用紙換算・選択字数）は行右へ寄せる */
+.chain-count {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* ── 連鎖タブ（複数連鎖の切替 + 連鎖別字数） ── */
+.chain-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--line);
+}
+
+.chain-tabs button {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.chain-tabs button.on {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+/* ── 執筆モード（v0.2）: 左=執筆ペイン / 右=原稿用紙キャンバス。
+   DOM 順は変えず flex の order で入替え、連鎖ペインを小説用の
+   広さへ拡げる。レイアウト編集の抑止は App 側のゲートで行う ── */
+.app.mode-write .right-dock {
+  order: 1;
+  width: 400px;
+  border-left: none;
+  border-right: 1px solid var(--line);
+}
+
+.app.mode-write .canvas-wrap {
+  order: 2;
+}
+
+/* 執筆ペインの入力欄は小説用に読み書きしやすいサイズへ */
+.app.mode-write .chain-text {
+  font-size: 16px;
+  line-height: 1.9;
+  padding: 14px;
+}
+
 /* ── 画像オブジェクト ── */
 .img-fill {
   width: 100%;

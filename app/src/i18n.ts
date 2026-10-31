@@ -38,6 +38,9 @@ const ja = {
   'menu.themeTip': 'テーマ切替（次は $1）',
   'menu.lang': 'English',
   'menu.langTip': 'Switch to English UI',
+  'menu.mode': '執筆モード',
+  'menu.modeTip':
+    '執筆 ⇄ 組版の切替 — 執筆では左に本文ペイン、レイアウト編集は畳む',
 
   // 連鎖ペイン
   'chain.title': '連鎖テキスト（$1エリア）',
@@ -56,6 +59,19 @@ const ja = {
   'scroll.down': '下へスクロール',
   'chain.markLink': 'URLを入力してEnter',
   'chain.areaLink': 'リンク',
+  'chain.tab': '連鎖$1（$2字）',
+
+  // 執筆ペイン（v0.2）
+  'write.break': '話区切り',
+  'write.breakTip': 'キャレット位置に話区切り行を挿入',
+  'write.indent': '字下げ',
+  'write.indentTip': '改行時に段落頭の全角スペースを自動挿入（縦書きエリアのみ）',
+  'write.count': '$1字・$2枚',
+  'write.sel': '選択$1字',
+  'status.chars': '計$1字',
+  'canvas.hintWrite':
+    '執筆モード — レイアウトを編集するには組版モードへ切替',
+  'hint.write': '左で書くと右の原稿用紙へ流れ込みます — 組版モードで枠編集',
   'ta.overflow': 'あふれ $1字 「$2…」',
   'ta.overflowTip': 'あふれ — クリックで連鎖テキストを開く',
   'ta.halign': '横揃え',
@@ -193,6 +209,9 @@ const en: Record<keyof typeof ja, string> = {
   'menu.themeTip': 'Switch theme (next: $1)',
   'menu.lang': 'Japanese',
   'menu.langTip': '日本語 UI に切り替え',
+  'menu.mode': 'Write mode',
+  'menu.modeTip':
+    'Toggle writing / layout — writing puts the text pane on the left and folds layout editing',
 
   'chain.title': 'Chain text ($1 areas)',
   'chain.close': 'Close',
@@ -210,6 +229,19 @@ const en: Record<keyof typeof ja, string> = {
   'scroll.down': 'Scroll down',
   'chain.markLink': 'Enter URL and press Enter',
   'chain.areaLink': 'Link',
+  'chain.tab': 'Chain $1 ($2)',
+
+  'write.break': 'Scene break',
+  'write.breakTip': 'Insert a scene-break line at the caret',
+  'write.indent': 'Indent',
+  'write.indentTip':
+    'Auto-insert an ideographic space at paragraph start on Enter (vertical areas only)',
+  'write.count': '$1 chars · $2 sheets',
+  'write.sel': '$1 selected',
+  'status.chars': '$1 chars total',
+  'canvas.hintWrite': 'Writing mode — switch to Layout mode to edit the layout',
+  'hint.write':
+    'Write on the left — it flows into the genkōyōshi on the right. Layout mode edits frames',
   'ta.overflow': 'Overflow $1 chars "$2…"',
   'ta.overflowTip': 'Overflow — click to open chain text',
   'ta.halign': 'Align H',

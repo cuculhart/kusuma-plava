@@ -3,7 +3,7 @@
 // IME 確定・キャレット維持・順序崩れの問題が構造的に消える設計。
 // 選択範囲への部分装飾（TextMark）とインストール済みフォント列挙を持つ。
 
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { sliceRuns, type Chain, type TextAttrs } from 'inimbal';
 import type { TFunc } from './i18n';
 import { tf } from './i18n';
@@ -21,6 +21,10 @@ export function ChainPane({
   onClearMarks,
   onAreaData,
   onClose,
+  indent,
+  onIndent,
+  chains,
+  onPickChain,
   t,
 }: {
   chain: Chain;
@@ -33,6 +37,12 @@ export function ChainPane({
   onClearMarks: (s: number, e: number) => void;
   onAreaData: (patch: Partial<TextAreaData>) => void;
   onClose: () => void;
+  /** 字下げ — Enter の段落頭に全角スペースを自動挿入（v0.2） */
+  indent: boolean;
+  onIndent: (v: boolean) => void;
+  /** 連鎖タブ（複数連鎖時の切替 + 連鎖別字数）。未指定なら非表示 */
+  chains?: Chain[];
+  onPickChain?: (chainId: string) => void;
   t: TFunc;
 }) {
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -66,8 +76,85 @@ export function ChainPane({
   // 既定3種 + インストール済みフォント（queryLocalFonts が取れた場合）
   const fonts = fontOptions(sysFonts);
 
+  // ── v0.2 執筆補助 ──
+  // 字下げ・話区切りで差し込んだ文字の後へキャレットを戻すための退避
+  const pendingCaret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = taRef.current;
+    if (el && pendingCaret.current != null) {
+      el.selectionStart = el.selectionEnd = pendingCaret.current;
+      pendingCaret.current = null;
+    }
+  }, [chain.text]);
+
+  // 字下げ: 「\n1字の挿入」のみを検出して直後に全角スペースを差す
+  // （入力時適用 — 既存テキストへは遡及しない。ペースト・範囲置換・
+  // IME 変換中は素通し）。縦書きエリアのみ有効
+  const onTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    let v = el.value;
+    const pos = el.selectionStart;
+    const vertical =
+      (areaData?.writing ?? 'vertical-rl') === 'vertical-rl';
+    if (
+      indent &&
+      vertical &&
+      !(e.nativeEvent as InputEvent).isComposing &&
+      v.length === chain.text.length + 1
+    ) {
+      const nl = v.lastIndexOf('\n', pos - 1);
+      if (
+        nl >= 0 &&
+        v === chain.text.slice(0, nl) + '\n' + chain.text.slice(nl)
+      ) {
+        const after = v.slice(nl + 1);
+        // 次行が既に全角スペース始まり or 空行（連続改行）なら挿さない
+        if (after === '' || (after[0] !== '　' && after[0] !== '\n')) {
+          v = `${v.slice(0, nl + 1)}　${after}`;
+          pendingCaret.current = pos + 1;
+        }
+      }
+    }
+    onText(v);
+  };
+
+  // 話区切り — キャレット位置にマーカー行を差し込む（構造は持たない）
+  const insertBreak = (mark: '＊' | '◇') => {
+    const el = taRef.current;
+    const s = el ? el.selectionStart : chain.text.length;
+    const e = el ? el.selectionEnd : s;
+    const before = chain.text.slice(0, s);
+    // 行頭に揃える — 直前が改行済みか文頭なら改行を足さない
+    const ins = `${before === '' || before.endsWith('\n') ? '' : '\n'}${mark}\n`;
+    pendingCaret.current = s + ins.length;
+    onText(before + ins + chain.text.slice(e));
+    el?.focus();
+  };
+
+  // 字数 — 原稿用紙換算は 400字=1枚（作家の共通言語）。
+  // サロゲート対を1字に数えるためコードポイントで数える
+  const total = [...chain.text].length;
+  const selCount = hasSel
+    ? [...chain.text.slice(sel.s, sel.e)].length
+    : 0;
+  const sheets = (total / 400).toFixed(1);
+
   return (
     <aside className="chain-pane">
+      {/* 複数連鎖の切替タブ（連鎖別字数つき） */}
+      {chains && chains.length > 1 && (
+        <div className="chain-tabs">
+          {chains.map((c, i) => (
+            <button
+              key={c.id}
+              className={c.id === chain.id ? 'on' : ''}
+              onClick={() => onPickChain?.(c.id)}
+            >
+              {tf(t, 'chain.tab', i + 1, [...c.text].length)}
+            </button>
+          ))}
+        </div>
+      )}
       <header>
         <span>{tf(t, 'chain.title', chain.areas.length)}</span>
         <button onClick={onClose} title={t('chain.close')}>
@@ -80,9 +167,30 @@ export function ChainPane({
         value={chain.text}
         spellCheck={false}
         placeholder={t('chain.placeholder')}
-        onChange={(e) => onText(e.currentTarget.value)}
+        onChange={onTextChange}
         onSelect={syncSel}
       />
+      {/* 執筆ツール — 話区切り / 字下げ / 字数 */}
+      <div className="chain-tools">
+        <button title={t('write.breakTip')} onClick={() => insertBreak('＊')}>
+          ＊
+        </button>
+        <button title={t('write.breakTip')} onClick={() => insertBreak('◇')}>
+          ◇
+        </button>
+        <label title={t('write.indentTip')}>
+          <input
+            type="checkbox"
+            checked={indent}
+            onChange={(e) => onIndent(e.currentTarget.checked)}
+          />
+          {t('write.indent')}
+        </label>
+        <span className="chain-count">
+          {tf(t, 'write.count', total, sheets)}
+          {hasSel ? ` · ${tf(t, 'write.sel', selCount)}` : ''}
+        </span>
+      </div>
       {overflow && (
         <div className="chain-overflow">
           {tf(

@@ -40,6 +40,8 @@ export function MenuPane({
   onTheme,
   onLang,
   lang,
+  writeMode,
+  onMode,
   t,
 }: {
   collapsed: boolean;
@@ -66,6 +68,9 @@ export function MenuPane({
   onTheme: (t: Theme) => void;
   onLang: () => void;
   lang: 'ja' | 'en';
+  /** 執筆モード中はレイアウト系のツール項目を畳む（v0.2） */
+  writeMode: boolean;
+  onMode: () => void;
   t: TFunc;
 }) {
   const item = (
@@ -98,10 +103,15 @@ export function MenuPane({
         <span className="m-ic">≡</span>
         {!collapsed && (
           <span className="m-label">
-            Kusuma Plava <span className="m-ver">v0.8.1</span>
+            Kusuma Plava <span className="m-ver">v0.2.0</span>
           </span>
         )}
       </button>
+      {item('執', t('menu.mode'), onMode, {
+        on: writeMode,
+        title: t('menu.modeTip'),
+        enIc: 'W',
+      })}
       {item('Aa', t('menu.lang'), onLang, { title: t('menu.langTip') })}
       {item('新', t('menu.new'), onNew, { enIc: 'N' })}
       {item('開', t('menu.openDoc'), onOpen, { enIc: 'O' })}
@@ -114,35 +124,41 @@ export function MenuPane({
         item('消', t('menu.undo'), onUndo, { title: 'Ctrl+Z', enIc: '↶' })}
       {canRedo &&
         item('戻', t('menu.redo'), onRedo, { title: 'Ctrl+Y', enIc: '↷' })}
-      {item('尺', t('menu.ruler'), onRuler, { on: rulerOn, enIc: 'R' })}
+      {!writeMode &&
+        item('尺', t('menu.ruler'), onRuler, { on: rulerOn, enIc: 'R' })}
       {item('枠', t('menu.fit'), onFit, {
         title: t('menu.fitTip'),
         enIc: 'F',
       })}
-      <div className="m-sep" />
-      {item('鎖', t('menu.link'), onLinkMode, {
-        on: linkMode,
-        title: t('menu.linkTip'),
-        enIc: 'L',
-      })}
-      {item('画', t('menu.image'), onImage, { enIc: 'I' })}
-      <div className="m-sep" />
-      {item('□', t('menu.rect'), () => onShapeTool(shapeTool === 'rect' ? null : 'rect'), {
-        on: shapeTool === 'rect',
-        title: t('menu.rectTip'),
-      })}
-      {item('◯', t('menu.ellipse'), () => onShapeTool(shapeTool === 'ellipse' ? null : 'ellipse'), {
-        on: shapeTool === 'ellipse',
-        title: t('menu.ellipseTip'),
-      })}
-      {item('／', t('menu.line'), () => onShapeTool(shapeTool === 'line' ? null : 'line'), {
-        on: shapeTool === 'line',
-        title: t('menu.lineTip'),
-      })}
-      {item('〜', t('menu.curve'), () => onShapeTool(shapeTool === 'curve' ? null : 'curve'), {
-        on: shapeTool === 'curve',
-        title: t('menu.curveTip'),
-      })}
+      {/* レイアウト編集系（リンク・画像・シェイプ）は組版モードのみ */}
+      {!writeMode && (
+        <>
+          <div className="m-sep" />
+          {item('鎖', t('menu.link'), onLinkMode, {
+            on: linkMode,
+            title: t('menu.linkTip'),
+            enIc: 'L',
+          })}
+          {item('画', t('menu.image'), onImage, { enIc: 'I' })}
+          <div className="m-sep" />
+          {item('□', t('menu.rect'), () => onShapeTool(shapeTool === 'rect' ? null : 'rect'), {
+            on: shapeTool === 'rect',
+            title: t('menu.rectTip'),
+          })}
+          {item('◯', t('menu.ellipse'), () => onShapeTool(shapeTool === 'ellipse' ? null : 'ellipse'), {
+            on: shapeTool === 'ellipse',
+            title: t('menu.ellipseTip'),
+          })}
+          {item('／', t('menu.line'), () => onShapeTool(shapeTool === 'line' ? null : 'line'), {
+            on: shapeTool === 'line',
+            title: t('menu.lineTip'),
+          })}
+          {item('〜', t('menu.curve'), () => onShapeTool(shapeTool === 'curve' ? null : 'curve'), {
+            on: shapeTool === 'curve',
+            title: t('menu.curveTip'),
+          })}
+        </>
+      )}
       <div className="m-sep" />
       {item('頁', t('menu.addPage'), onAddPage, { enIc: 'P' })}
       {item('消', t('menu.delPage'), onDeletePage, {

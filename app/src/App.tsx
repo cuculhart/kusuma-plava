@@ -15,6 +15,7 @@ import {
   insertPage,
   layoutChain,
   linkChains,
+  pageRectAt,
   pageRects,
   pruneChains,
   RUBY_LANE_RATIO,
@@ -80,6 +81,42 @@ function syncSnapExtra(engine: Engine, model: PageModel): void {
   engine.snapExtra = { xs, ys };
 }
 
+/** 執筆モード既定ドキュメント（v0.2）— 第1ページの版面
+    （上下左右 20mm マージン）を覆う縦書きテキストエリア1枚 +
+    それに繋がる連鎖1本。新規作成・初期起動で
+    「原稿用紙 + 執筆ペイン」の形に開く。 */
+function buildWritingDoc(font: string): {
+  model: PageModel;
+  objects: WorldObject[];
+  chains: Chain[];
+} {
+  const model = createPages({ size: 'A4', landscape: false }, 1);
+  const p = pageRectAt(model.spec, 0);
+  const m = 20; // 版面マージン（mm）— 天/地/小口/ノド一律の簡易版面
+  const areaId = 'ta1';
+  return {
+    model,
+    objects: [
+      {
+        id: areaId,
+        kind: TEXT_KIND,
+        x: p.x + m,
+        y: p.y + m,
+        w: p.w - 2 * m,
+        h: p.h - 2 * m,
+        style: { stroke: 'rgba(90,110,140,0.4)' },
+        // 既定は縦書き（v0.1 の新規エリア既定と同じ）
+        data: {
+          ...DEFAULT_TEXT_DATA,
+          fontFamily: font,
+          writing: 'vertical-rl',
+        },
+      },
+    ],
+    chains: [{ id: 'c1', areas: [areaId], text: '' }],
+  };
+}
+
 /** 画像取り込みダイアログの状態 */
 interface ImgDlg {
   url: string;
@@ -98,10 +135,10 @@ export function App() {
   });
   useEngineVersion(engine);
 
-  const [model, setModel] = useState<PageModel>(() =>
-    createPages({ size: 'A4', landscape: false }, 3),
-  );
-  const [chains, setChains] = useState<Chain[]>([]);
+  // 空ドキュメントは執筆レイアウト（版面エリア+連鎖）で開く
+  const [initDoc] = useState(() => buildWritingDoc('sans-serif'));
+  const [model, setModel] = useState<PageModel>(() => initDoc.model);
+  const [chains, setChains] = useState<Chain[]>(() => initDoc.chains);
   const [linkMode, setLinkMode] = useState(false);
   const [linkFrom, setLinkFrom] = useState<string | null>(null);
   const [selLink, setSelLink] = useState<LinkSel | null>(null);
@@ -149,6 +186,17 @@ export function App() {
   const dirtyRef = useRef(false);
   const applyingRef = useRef(false);
   const [docFont, setDocFont] = useState('sans-serif');
+  // v0.2: 執筆/組版モード — 既定は執筆（レイアウト編集は組版で開放）。
+  // localStorage 'kusuma-mode' に永続化
+  const [writeMode, setWriteMode] = useState(
+    () => localStorage.getItem('kusuma-mode') !== 'layout',
+  );
+  // 執筆モードでの連鎖選択（キャンバス選択とは独立）
+  const [writeChainId, setWriteChainId] = useState<string | null>(null);
+  // 字下げ — Enter 入力時に段落頭の全角スペースを自動挿入（既定ON）
+  const [indent, setIndent] = useState(
+    () => localStorage.getItem('kusuma-indent') !== '0',
+  );
   type Snap = {
     objects: WorldObject[];
     chains: Chain[];
@@ -185,6 +233,8 @@ export function App() {
   chainsRef.current = chains;
   const linkModeRef = useRef(linkMode);
   linkModeRef.current = linkMode;
+  const writeModeRef = useRef(writeMode);
+  writeModeRef.current = writeMode;
   const placingRef = useRef(placing);
   placingRef.current = placing;
   const measurerRef = useRef(createCanvasMeasurer());
@@ -196,9 +246,16 @@ export function App() {
 
   // ── 初期化: ページ枠 + デモの連鎖エリア ──
   useEffect(() => {
-    engine.hitFilter = (o) => o.kind !== PAGE_KIND && !linkModeRef.current;
+    // 執筆モードではキャンバス上のオブジェクト選択・ドラッグを抑止する
+    // （レイアウト編集は組版モード側の仕事 — 執筆ペインは別駆動）
+    engine.hitFilter = (o) =>
+      o.kind !== PAGE_KIND &&
+      !linkModeRef.current &&
+      !writeModeRef.current;
     engine.marqueeFilter = (o) =>
-      o.kind !== PAGE_KIND && !linkModeRef.current;
+      o.kind !== PAGE_KIND &&
+      !linkModeRef.current &&
+      !writeModeRef.current;
     // kimetron 1.6.0: アスペクト比ロック画像は角リサイズで比率を保持
     engine.resizeAspect = (o) =>
       o.kind === IMG_KIND && (o.data as ImageData)?.lock
@@ -206,7 +263,7 @@ export function App() {
         : null;
     engine.setDoc({
       ...engine.doc,
-      objects: pageObjects(model),
+      objects: [...pageObjects(model), ...initDoc.objects],
     });
     syncSnapExtra(engine, model);
     focusPage(0);
@@ -260,7 +317,7 @@ export function App() {
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault();
-        duplicateSel();
+        if (!writeModeRef.current) duplicateSel();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
@@ -295,6 +352,8 @@ export function App() {
         return;
       }
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      // 執筆モードではオブジェクト削除・ワイヤー切断を抑止
+      if (writeModeRef.current) return;
       if (selLink) {
         setChains((cs) =>
           unlinkAt(cs, selLink.chainId, selLink.index, nextId('c')),
@@ -539,9 +598,10 @@ export function App() {
 
   const newDoc = () => {
     if (!window.confirm(t('confirm.new'))) return;
-    const m = createPages({ size: 'A4', landscape: false }, 1);
-    commitPages(m, []);
-    setChains([]);
+    const d = buildWritingDoc(docFont);
+    commitPages(d.model, d.objects);
+    setChains(d.chains);
+    setWriteChainId(null);
     setFooter(true);
     setDocTitle('');
     setPageOpacity(50);
@@ -549,7 +609,7 @@ export function App() {
     createdAtRef.current = new Date().toISOString();
     dirtyRef.current = false;
     engine.setSelection([]);
-    focusPage(0, m);
+    focusPage(0, d.model);
   };
   const confirmSave = (name: string) => {
     const u8 = packArchive({
@@ -604,6 +664,7 @@ export function App() {
         groupSeqRef.current = gn + 1;
         commitPages(r.model, objects);
         setChains(r.chains);
+        setWriteChainId(null);
         setFooter(r.footer);
         setDocTitle(r.title);
         setPageOpacity(r.pageOpacity);
@@ -623,6 +684,8 @@ export function App() {
   const suppressDblUntil = useRef(0);
 
   const onDblClick = (e: React.MouseEvent) => {
+    // 執筆モードではエリア生成を抑止（レイアウト編集は組版モードで）
+    if (writeModeRef.current) return;
     if (performance.now() < suppressDblUntil.current) return;
     if (linkModeRef.current || placingRef.current) return;
     if (engine.mode === 'shape') {
@@ -958,6 +1021,41 @@ export function App() {
     addClones(makeClones(copyBuf.current, dx, dy, freshIdGen()), copyBuf.current);
   };
 
+  // ── 執筆/組版モード切替（v0.2）— 執筆へ入るときは進行中の
+  // レイアウト操作とキャンバス選択を畳む（機能は消さずゲートだけ） ──
+  const onToggleMode = () => {
+    const next = !writeMode;
+    setWriteMode(next);
+    localStorage.setItem('kusuma-mode', next ? 'write' : 'layout');
+    if (next) {
+      setLinkMode(false);
+      setLinkFrom(null);
+      setSelLink(null);
+      setCtxMenu(null);
+      setShapeTool(null);
+      setShapeDrag(null);
+      if (engine.mode === 'shape') engine.cancelShapeDraw();
+      if (placingRef.current) {
+        setPlacing(null);
+        setGhost(null);
+      }
+      engine.setSelection([]);
+    }
+  };
+  const onIndent = (v: boolean) => {
+    setIndent(v);
+    localStorage.setItem('kusuma-indent', v ? '1' : '0');
+  };
+  // 連鎖タブの選択 — 執筆ではペイン内状態、組版ではキャンバス選択
+  const onPickChain = (id: string) => {
+    if (writeModeRef.current) {
+      setWriteChainId(id);
+      return;
+    }
+    const c = chainsRef.current.find((x) => x.id === id);
+    if (c?.areas[0]) engine.setSelection([c.areas[0]]);
+  };
+
   // ── F26: グルーピング ──
   const groupSelection = () => {
     const g = freshGroup();
@@ -1074,6 +1172,16 @@ export function App() {
   );
   const selObj = selObjs.length === 1 ? selObjs[0] : null;
   const selChain = selObj ? (chainOf(chains, selObj.id) ?? null) : null;
+  // 執筆モード: 連鎖はキャンバス選択に依らずタブ選択（writeChainId）で
+  // 駆動し、未選択なら先頭連鎖へフォールバック（常に執筆ペインが開く）
+  const writeChain = writeMode
+    ? (chains.find((c) => c.id === writeChainId) ?? chains[0] ?? null)
+    : null;
+  const dockChain = writeChain ?? selChain;
+  // フォント等のエリア設定は連鎖の先頭エリアを代表に使う
+  const writeArea = dockChain
+    ? (objById.get(dockChain.areas[0]) ?? null)
+    : null;
 
   // ── ページナビ: アクティブページ（枠クリック or ナビで切替） ──
   const rects = pageRects(model.spec, model.pages);
@@ -1287,7 +1395,10 @@ export function App() {
   };
 
   return (
-    <div className="app" data-theme={theme}>
+    <div
+      className={writeMode ? 'app mode-write' : 'app'}
+      data-theme={theme}
+    >
       <div className="body">
         <MenuPane
           collapsed={collapsed}
@@ -1321,6 +1432,8 @@ export function App() {
             localStorage.setItem('kusuma-lang', next);
           }}
           lang={lang}
+          writeMode={writeMode}
+          onMode={onToggleMode}
           t={t}
         />
         <div
@@ -1380,6 +1493,8 @@ export function App() {
           }}
           onContextMenu={(e) => {
             e.preventDefault();
+            // 執筆モードでは Z-order 等のコンテキスト編集を開かない
+            if (writeModeRef.current) return;
             if (placingRef.current) {
               setPlacing(null);
               setGhost(null);
@@ -1433,14 +1548,19 @@ export function App() {
           />
           {/* 空ドキュメントの初見ヒント（ページ枠のみの時に表示） */}
           {!engine.doc.objects.some((o) => o.kind !== PAGE_KIND) && (
-            <div className="canvas-hint">{t('canvas.hint')}</div>
+            <div className="canvas-hint">
+              {t(writeMode ? 'canvas.hintWrite' : 'canvas.hint')}
+            </div>
           )}
-          <LinkWires
-            engine={engine}
-            chains={chains}
-            selLink={selLink}
-            onPick={setSelLink}
-          />
+          {/* 執筆モードではリンクワイヤーを出さない（選択も不可） */}
+          {!writeMode && (
+            <LinkWires
+              engine={engine}
+              chains={chains}
+              selLink={selLink}
+              onPick={setSelLink}
+            />
+          )}
           {shapeTool && shapeTool !== 'curve' && (
             <div
               className="shape-overlay"
@@ -1609,7 +1729,7 @@ export function App() {
               }}
             />
           )}
-          {rulerOn && rects[curPage] && (
+          {rulerOn && !writeMode && rects[curPage] && (
             <Rulers
               engine={engine}
               page={rects[curPage]}
@@ -1665,14 +1785,20 @@ export function App() {
         </div>
         <RightDock
           selObjs={selObjs}
-          chain={selChain}
+          chain={dockChain}
+          writeMode={writeMode}
+          writeArea={writeArea}
+          chains={chains}
+          onSelectChain={onPickChain}
+          indent={indent}
+          onIndent={onIndent}
           chainOverflow={
-            selChain ? (layouts.get(selChain.id)?.overflow ?? '') : ''
+            dockChain ? (layouts.get(dockChain.id)?.overflow ?? '') : ''
           }
           onChainText={(text) =>
             setChains((cs) =>
               cs.map((c) =>
-                c.id === selChain!.id
+                c.id === dockChain!.id
                   ? {
                       ...c,
                       text,
@@ -1685,7 +1811,7 @@ export function App() {
           onApplyMark={(s, e, attrs) =>
             setChains((cs) =>
               cs.map((c) =>
-                c.id === selChain!.id
+                c.id === dockChain!.id
                   ? { ...c, marks: applyMark(c.marks, s, e, attrs) }
                   : c,
               ),
@@ -1694,13 +1820,17 @@ export function App() {
           onClearMarks={(s, e) =>
             setChains((cs) =>
               cs.map((c) =>
-                c.id === selChain!.id
+                c.id === dockChain!.id
                   ? { ...c, marks: clearMarksIn(c.marks, s, e) }
                   : c,
               ),
             )
           }
-          onAreaData={(patch) => selObj && patchAreaData(selObj.id, patch)}
+          onAreaData={(patch) => {
+            // 執筆モードはキャンバス非選択なので先頭エリアを対象にする
+            const o = writeMode ? writeArea : selObj;
+            if (o) patchAreaData(o.id, patch);
+          }}
           onAreaDataAll={(patch) =>
             selObjs
               .filter((o) => o.kind === TEXT_KIND)
@@ -1769,8 +1899,19 @@ export function App() {
         />
       </div>
       <footer className="status">
-        <span className="hint">{hint || t('hint.default')}</span>
+        <span className="hint">
+          {hint || t(writeMode ? 'hint.write' : 'hint.default')}
+        </span>
         <span className="sep" />
+        {writeMode && (
+          <span>
+            {tf(
+              t,
+              'status.chars',
+              chains.reduce((n, c) => n + [...c.text].length, 0),
+            )}
+          </span>
+        )}
         <span>{tf(t, 'status.pages', model.pages.length)}</span>
         <span>scale {engine.scaleText()}</span>
         <span>
