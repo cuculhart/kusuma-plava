@@ -231,26 +231,33 @@ export function RightDock({
 
   let body: React.ReactNode;
   if (writeMode) {
-    // 執筆モード — 連鎖エディタだけを大きく。レイアウト系
-    // （mm 数値・揃え・Z-order・連鎖追加）は組版モード側の仕事
+    // 執筆モード — 連鎖エディタを主に大きく。レイアウト系
+    // （mm 数値・揃え・Z-order・連鎖追加）は組版モード側の仕事。
+    // 文書設定（用紙サイズ等）は畳んだ副セクションで下に置く
     body = chain ? (
-      <ChainPane
-        chain={chain}
-        areaData={(writeArea?.data as TextAreaData | undefined) ?? null}
-        overflow={chainOverflow}
-        onText={onChainText}
-        onApplyMark={onApplyMark}
-        onClearMarks={onClearMarks}
-        onAreaData={onAreaData}
-        onClose={onDeselect}
-        indent={indent}
-        onIndent={onIndent}
-        goal={goal}
-        onGoal={onGoal}
-        chains={chains}
-        onPickChain={onSelectChain}
-        t={t}
-      />
+      <>
+        <ChainPane
+          chain={chain}
+          areaData={(writeArea?.data as TextAreaData | undefined) ?? null}
+          overflow={chainOverflow}
+          onText={onChainText}
+          onApplyMark={onApplyMark}
+          onClearMarks={onClearMarks}
+          onAreaData={onAreaData}
+          onClose={onDeselect}
+          indent={indent}
+          onIndent={onIndent}
+          goal={goal}
+          onGoal={onGoal}
+          chains={chains}
+          onPickChain={onSelectChain}
+          t={t}
+        />
+        <details className="doc-settings">
+          <summary>{t('doc.settings')}</summary>
+          <DocProps {...docProps} t={t} />
+        </details>
+      </>
     ) : (
       // 連鎖が無い書庫は文書プロパティへフォールバック
       <DocProps {...docProps} t={t} />

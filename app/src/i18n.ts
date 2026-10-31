@@ -113,6 +113,7 @@ const ja = {
 
   // プロパティ
   'doc.title': '文書',
+  'doc.settings': '文書設定',
   'doc.name': 'タイトル',
   'doc.untitled': '（無題）',
   'doc.paper': '用紙',
@@ -307,6 +308,7 @@ const en: Record<keyof typeof ja, string> = {
   'ta.bottom': 'Bottom',
 
   'doc.title': 'Document',
+  'doc.settings': 'Document settings',
   'doc.name': 'Title',
   'doc.untitled': '(untitled)',
   'doc.paper': 'Paper',

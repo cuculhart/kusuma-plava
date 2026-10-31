@@ -1080,6 +1080,24 @@ body,
   flex: none;
 }
 
+/* 執筆モードの文書設定 — 連鎖ペイン下の折りたたみ副セクション。
+   展開時はドックの半分弱までに制限して内部スクロール（連鎖ペイン優先） */
+.doc-settings {
+  flex: none;
+  border-top: 1px solid var(--line);
+  max-height: 45%;
+  overflow-y: auto;
+}
+
+.doc-settings summary {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface2);
+  cursor: pointer;
+  user-select: none;
+}
+
 /* ── ルーラー（アクティブページ枠に沿う帯。位置は JS で指定） ── */
 .ruler-corner {
   position: absolute;
