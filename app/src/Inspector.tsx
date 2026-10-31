@@ -9,7 +9,7 @@ import {
   type WorldObject,
   type ZOrder,
 } from '@kimetron/core';
-import type { Chain, TextAttrs } from 'inimbal';
+import type { Chain, PaperSize, TextAttrs } from 'inimbal';
 import type { TFunc } from './i18n';
 import { tf } from './i18n';
 import { ChainPane } from './ChainPane';
@@ -180,12 +180,12 @@ export function RightDock({
   docProps: {
     title: string;
     onTitle: (s: string) => void;
-    size: 'A4' | 'A3';
+    size: PaperSize;
     landscape: boolean;
     pageCount: number;
     footer: boolean;
     pageOpacity: number;
-    onSize: (s: 'A4' | 'A3') => void;
+    onSize: (s: PaperSize) => void;
     onLandscape: () => void;
     onAddPage: () => void;
     onInsertAfter: (index: number) => void;
@@ -219,6 +219,22 @@ export function RightDock({
         />
         <div className="sub-props">
           <MmFields obj={one} onRect={onRect} />
+          {/* 組方向はエリア単位（連鎖内でもエリアごとに持つ） */}
+          <label className="img-lock">
+            {t('ta.writing')}
+            <select
+              value={(one.data as TextAreaData).writing ?? 'horizontal'}
+              onChange={(e) =>
+                onAreaData({
+                  writing: e.currentTarget
+                    .value as TextAreaData['writing'],
+                })
+              }
+            >
+              <option value="vertical-rl">{t('ta.vertical')}</option>
+              <option value="horizontal">{t('ta.horizontal')}</option>
+            </select>
+          </label>
           {/* 揃えは単独（非連鎖）エリアのみ — 連鎖は左上起点固定 */}
           {chain.areas.length === 1 && (
             <>
@@ -663,12 +679,12 @@ function DocProps({
 }: {
   title: string;
   onTitle: (s: string) => void;
-  size: 'A4' | 'A3';
+  size: PaperSize;
   landscape: boolean;
   pageCount: number;
   footer: boolean;
   pageOpacity: number;
-  onSize: (s: 'A4' | 'A3') => void;
+  onSize: (s: PaperSize) => void;
   onLandscape: () => void;
   onAddPage: () => void;
   onInsertAfter: (index: number) => void;
@@ -699,10 +715,14 @@ function DocProps({
           {t('doc.paper')}
           <select
             value={size}
-            onChange={(e) => onSize(e.currentTarget.value as 'A4' | 'A3')}
+            onChange={(e) => onSize(e.currentTarget.value as PaperSize)}
           >
+            {/* 日本の書物サイズを含む（文庫・新書は後発検討） */}
             <option value="A4">A4</option>
             <option value="A3">A3</option>
+            <option value="B5">B5</option>
+            <option value="B6">B6</option>
+            <option value="A5">A5</option>
           </select>
         </label>
         <label>

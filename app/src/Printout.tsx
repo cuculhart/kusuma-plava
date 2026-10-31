@@ -7,7 +7,14 @@ import {
   renderOrder,
   type WorldObject,
 } from '@kimetron/core';
-import { pageRects, type PageModel, type TextRun } from 'inimbal';
+import {
+  pageRects,
+  paperDims,
+  RUBY_LANE_RATIO,
+  tokenizeVertical,
+  type PageModel,
+  type TextRun,
+} from 'inimbal';
 import {
   DEFAULT_TEXT_DATA,
   IMG_KIND,
@@ -19,6 +26,7 @@ import {
   type ImageData,
   type TextAreaData,
 } from './types';
+import { vunitSpans, type VStyle } from './vtrender';
 
 const intersects = (
   o: WorldObject,
@@ -49,10 +57,15 @@ export function Printout({
   const rects = pageRects(model.spec, model.pages);
   const { spec } = model;
   const content = renderOrder(objects).filter((o) => o.kind !== PAGE_KIND);
+  // @page の名前付きサイズに無い判型（B6 等）は mm 実寸へフォールバック
+  const dims = paperDims(spec);
+  const pageSize = /^(A3|A4|A5|B5)$/.test(spec.size)
+    ? `${spec.size} ${spec.landscape ? 'landscape' : 'portrait'}`
+    : `${dims.w}mm ${dims.h}mm`;
 
   return (
     <div className="printout">
-      <style>{`@page { size: ${spec.size} ${spec.landscape ? 'landscape' : 'portrait'}; margin: 0; }`}</style>
+      <style>{`@page { size: ${pageSize}; margin: 0; }`}</style>
       <div className="pbar">
         <button onClick={onPrint}>{t('print.exec')}</button>
         <button onClick={onClose}>{t('print.close')}</button>
@@ -195,10 +208,41 @@ export function Printout({
               if (o.kind === TEXT_KIND) {
                 const d = { ...DEFAULT_TEXT_DATA, ...(o.data as TextAreaData) };
                 const alone = areaAlone(o);
+                const vertical = d.writing === 'vertical-rl';
+                const runs = sliceRuns(o);
+                // 縦書き: runs はスライスの厳密な分割なので join で
+                // 原文が戻り、fitVertical と同じ分割へトークン化できる。
+                // ラン境界にまたがる単位は先頭ランの装飾に寄せる（v0.1 簡約）
+                const rbs = (() => {
+                  let a = 0;
+                  return runs.map((r) => {
+                    const rb = { s: a, e: a + r.text.length, a: r.attrs };
+                    a += r.text.length;
+                    return rb;
+                  });
+                })();
+                const vStyleOf = (p: number): VStyle => {
+                  const r = rbs.find((x) => p < x.e) ?? rbs[rbs.length - 1];
+                  const a = r?.a;
+                  return {
+                    css: {
+                      fontSize: `${a?.fontSize ?? d.fontSize}mm`,
+                      fontFamily: a?.fontFamily,
+                      color: a?.link ? '#1a56c4' : (a?.color ?? d.color),
+                      fontWeight: a?.bold ? 'bold' : undefined,
+                      fontStyle: a?.italic ? 'italic' : undefined,
+                      textDecoration:
+                        a?.underline || a?.link ? 'underline' : undefined,
+                    },
+                    // 印刷は <a> で出す → PDF 書き出しでリンクが生きる
+                    link: a?.link,
+                    title: a?.link,
+                  };
+                };
                 return (
                   <div
                     key={o.id}
-                    className="parea"
+                    className={vertical ? 'parea vt' : 'parea'}
                     style={{
                       left: `${left}mm`,
                       top: `${top}mm`,
@@ -206,7 +250,9 @@ export function Printout({
                       height: `${o.h}mm`,
                       padding: `${TEXT_PAD_MM}mm`,
                       fontSize: `${d.fontSize}mm`,
-                      lineHeight: LINE_HEIGHT,
+                      // 縦書きは段ピッチ（字セル+ルビ欄）。inline 指定は
+                      // CSS クラスに勝つため縦のときだけ差し替える
+                      lineHeight: vertical ? 'var(--pitch)' : LINE_HEIGHT,
                       fontFamily: d.fontFamily,
                       fontWeight: d.bold ? 'bold' : undefined,
                       fontStyle: d.italic ? 'italic' : undefined,
@@ -221,9 +267,21 @@ export function Printout({
                               d.valign === 'middle' ? 'center' : 'flex-end',
                           }
                         : {}),
+                      ...(vertical
+                        ? ({
+                            '--cell': `${d.fontSize}mm`,
+                            '--lane': `${d.fontSize * RUBY_LANE_RATIO}mm`,
+                            '--pitch': `${d.fontSize * (1 + RUBY_LANE_RATIO)}mm`,
+                          } as React.CSSProperties)
+                        : {}),
                     }}
                   >
-                    {sliceRuns(o).map((r, i) => {
+                    {vertical
+                      ? vunitSpans(
+                          tokenizeVertical(runs.map((r) => r.text).join('')),
+                          vStyleOf,
+                        )
+                      : runs.map((r, i) => {
                       const span = (
                         <span
                           style={{

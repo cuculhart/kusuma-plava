@@ -1,12 +1,12 @@
 // ページモデル — 実寸用紙枠をワールド mm 座標に縦並びで置く。
 // Kimetron 非依存の純粋モデル。
 //
-//   - A4/A3 × 縦/横のみ
+//   - A4/A3 + 日本の書物サイズ（B5/B6/A5）× 縦/横
 //   - 用紙サイズ/向きの変更は枠の差し替えのみ（オブジェクトの mm 座標は不変）
 //   - ページ削除 = 枠だけ消す（スロットは空きとして残り、他は動かない）
 //   - ページ挿入 = 挿入箇所以下のページ枠・全オブジェクトを1ページ分下へ
 
-export type PaperSize = 'A4' | 'A3';
+export type PaperSize = 'A4' | 'A3' | 'B5' | 'B6' | 'A5';
 
 export interface PaperSpec {
   size: PaperSize;
@@ -17,6 +17,9 @@ export interface PaperSpec {
 export const PAPER_DIMS_MM: Record<PaperSize, { w: number; h: number }> = {
   A4: { w: 210, h: 297 },
   A3: { w: 297, h: 420 },
+  B5: { w: 182, h: 257 },
+  B6: { w: 128, h: 182 },
+  A5: { w: 148, h: 210 },
 };
 
 export function paperDims(spec: PaperSpec): { w: number; h: number } {

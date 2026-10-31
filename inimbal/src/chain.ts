@@ -6,6 +6,9 @@
 //
 // 計測は注入する（DOM/Canvas 依存をここに持ち込まない）
 
+/** 組方向。省略時は 'horizontal' 扱い（旧アーカイブとの後方互換） */
+export type WritingMode = 'horizontal' | 'vertical-rl';
+
 /** エリアの内寸（表示域）+ タイポグラフィ。
     width/height/fontSize の単位は呼び出し側と計測側で
     揃えておく（本アプリでは mm） */
@@ -19,6 +22,12 @@ export interface AreaBox {
   fontFamily?: string;
   bold?: boolean;
   italic?: boolean;
+  /** 組方向。'vertical-rl' で縦書き（段は右→左へ流れる） */
+  writing?: WritingMode;
+  /** 回しこみ障害物（mm・エリアローカル座標）。
+      TODO(v0.3): 計測側での空き区間計算は未実装。
+      spike/runaround.html で方式は検証済み — フィールドのみ予約 */
+  obstacles?: { x: number; y: number; w: number; h: number }[];
   /** 部分装飾マーク（chain.text 基準の座標）— layoutChain が設定 */
   marks?: TextMark[];
   /** 渡した text の chain.text 内開始位置 — layoutChain が設定 */
@@ -82,6 +91,10 @@ export interface TextAttrs {
   underline?: boolean;
   /** URL リンク（印刷/PDF で <a> 化。編集画面では遷移しない） */
   link?: string;
+  /** ルビ（ヨミガナ文字列）。縦書きエリアで <ruby> として描く。
+      v0.1 では本文の ｜《》 記法を描画時に解釈するため未使用 — 将来
+      marks 経由でルビを持たせるための予約属性（傍点・圏点も想定） */
+  ruby?: string;
 }
 
 /** chain.text の [start,end) に効く書式マーク。後勝ち（属性単位の上書き） */

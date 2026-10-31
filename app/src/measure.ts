@@ -4,8 +4,10 @@
 // slices の join === text を保つため、常に「収まる接頭辞長」を返す。
 // box.marks（部分装飾）があるとラン境界で ctx.font を切替え、
 // 行高さは行内の最大 fontSize で計る。
+// box.writing === 'vertical-rl' なら inimbal の縦版 fit() へ振り分ける
+// （単位カウント方式 — 和文は em 正方形近似で measureText 不要）。
 
-import { sliceRuns, type TextAttrs } from 'inimbal';
+import { fitVertical, sliceRuns, type TextAttrs } from 'inimbal';
 import type { TextMeasurer } from 'inimbal';
 import { LINE_HEIGHT, MM_PX } from './types';
 
@@ -18,6 +20,8 @@ export function createCanvasMeasurer(): TextMeasurer {
   const ctx = document.createElement('canvas').getContext('2d')!;
   return {
     fit(text, box) {
+      // 縦書きは単位カウントの専用経路（禁則・ルビ・段送り込み）
+      if (box.writing === 'vertical-rl') return fitVertical(text, box);
       const base: TextAttrs = {
         fontSize: box.fontSize ?? 4,
         fontFamily: box.fontFamily ?? 'sans-serif',

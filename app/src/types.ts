@@ -1,6 +1,7 @@
 // アプリ共有の型・定数
 
 import type { Engine, WorldObject } from '@kimetron/core';
+import type { WritingMode } from 'inimbal';
 
 export const MM_PX = 96 / 25.4; // 1mm = 96/25.4 px (96dpi 実寸)
 
@@ -38,6 +39,9 @@ export interface TextAreaData {
   halign?: 'left' | 'center' | 'right';
   /** エリア全体の URL リンク（印刷/PDF で <a> 化） */
   link?: string;
+  /** 組方向。省略時は 'horizontal' 扱い（旧書庫との後方互換）。
+      新規エリアは生成時に 'vertical-rl' を明示して持つ */
+  writing?: WritingMode;
 }
 
 export const DEFAULT_TEXT_DATA: TextAreaData = {

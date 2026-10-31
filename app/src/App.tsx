@@ -17,8 +17,10 @@ import {
   linkChains,
   pageRects,
   pruneChains,
+  RUBY_LANE_RATIO,
   setPaper,
   sliceRuns,
+  tokenizeVertical,
   unlinkAt,
   type Chain,
   type LayoutResult,
@@ -35,6 +37,7 @@ import { Rulers } from './Rulers';
 import { makeT, tf, type Lang } from './i18n';
 import { packArchive, unpackArchive } from './docio';
 import { createCanvasMeasurer } from './measure';
+import { vunitSpans, type VStyle } from './vtrender';
 import {
   DEFAULT_TEXT_DATA,
   IMG_KIND,
@@ -662,7 +665,8 @@ export function App() {
       w: 60,
       h: 45,
       style: { stroke: 'rgba(90,110,140,0.4)' },
-      data: { ...DEFAULT_TEXT_DATA, fontFamily: docFont },
+      // 新規エリアの既定は縦書き（旧データの writing 欠落は横扱いのまま）
+      data: { ...DEFAULT_TEXT_DATA, fontFamily: docFont, writing: 'vertical-rl' },
     });
     setChains((cs) => [
       ...cs,
@@ -1054,6 +1058,7 @@ export function App() {
           fontFamily: d.fontFamily,
           bold: d.bold,
           italic: d.italic,
+          writing: d.writing,
         },
       ];
     });
@@ -1151,6 +1156,51 @@ export function App() {
       const overflow = isLast ? (lr?.overflow ?? '') : '';
       // リンク連鎖（複数エリア）は左上起点固定。単独エリアのみ揃え可
       const alone = !c || c.areas.length === 1;
+      const vertical = d.writing === 'vertical-rl';
+      // 縦書き: スライス全体を組版単位へ分解（fitVertical と同じ分割で
+      // 計測と描画を一致させる）。ラン境界にまたがる単位は先頭ランの
+      // 装飾に寄せる（v0.1 の簡約 — ルビを分断しないため）
+      const units = vertical ? tokenizeVertical(sl?.text ?? '') : null;
+      const rbs = (() => {
+        if (!vertical) return null;
+        let a = 0;
+        return runs.map((r) => {
+          const rb = { s: a, e: a + r.text.length, a: r.attrs };
+          a += r.text.length;
+          return rb;
+        });
+      })();
+      const vStyleOf = (p: number): VStyle => {
+        const r = rbs?.find((x) => p < x.e) ?? rbs?.[rbs.length - 1];
+        const a = r?.a;
+        return {
+          css: {
+            fontSize: (a?.fontSize ?? d.fontSize) * MM_PX * z,
+            fontFamily: a?.fontFamily,
+            // リンクは編集画面では遷移させず色+下線で表現
+            color: a?.link ? '#1a56c4' : a?.color,
+            fontWeight: a?.bold ? 'bold' : undefined,
+            fontStyle: a?.italic ? 'italic' : undefined,
+            textDecoration:
+              a?.underline || a?.link ? 'underline' : undefined,
+          },
+          title: a?.link,
+        };
+      };
+      const alignStyle = alone
+        ? {
+            textAlign: d.halign,
+            ...(d.valign === 'middle' || d.valign === 'bottom'
+              ? {
+                  display: 'flex',
+                  flexDirection: 'column' as const,
+                  justifyContent:
+                    d.valign === 'middle' ? 'center' : 'flex-end',
+                }
+              : {}),
+          }
+        : undefined;
+      const cellPx = d.fontSize * MM_PX * z;
       return (
         <div
           className={`ta${linkFrom === o.id ? ' link-from' : ''}`}
@@ -1166,43 +1216,40 @@ export function App() {
           }}
         >
           <div
-            className="ta-slice"
+            className={vertical ? 'ta-slice vt' : 'ta-slice'}
             style={
-              alone
-                ? {
-                    textAlign: d.halign,
-                    ...(d.valign === 'middle' || d.valign === 'bottom'
-                      ? {
-                          display: 'flex',
-                          flexDirection: 'column' as const,
-                          justifyContent:
-                            d.valign === 'middle' ? 'center' : 'flex-end',
-                        }
-                      : {}),
-                  }
-                : undefined
+              vertical
+                ? ({
+                    '--cell': `${cellPx}px`,
+                    '--lane': `${cellPx * RUBY_LANE_RATIO}px`,
+                    '--pitch': `${cellPx * (1 + RUBY_LANE_RATIO)}px`,
+                    ...alignStyle,
+                  } as React.CSSProperties)
+                : alignStyle
             }
           >
-            {runs.map((r, i) => (
-              <span
-                key={i}
-                title={r.attrs.link}
-                style={{
-                  fontSize: r.attrs.fontSize! * MM_PX * z,
-                  fontFamily: r.attrs.fontFamily,
-                  // リンクは編集画面では遷移させず色+下線で表現
-                  color: r.attrs.link ? '#1a56c4' : r.attrs.color,
-                  fontWeight: r.attrs.bold ? 'bold' : undefined,
-                  fontStyle: r.attrs.italic ? 'italic' : undefined,
-                  textDecoration:
-                    r.attrs.underline || r.attrs.link
-                      ? 'underline'
-                      : undefined,
-                }}
-              >
-                {r.text}
-              </span>
-            ))}
+            {vertical
+              ? vunitSpans(units!, vStyleOf)
+              : runs.map((r, i) => (
+                  <span
+                    key={i}
+                    title={r.attrs.link}
+                    style={{
+                      fontSize: r.attrs.fontSize! * MM_PX * z,
+                      fontFamily: r.attrs.fontFamily,
+                      // リンクは編集画面では遷移させず色+下線で表現
+                      color: r.attrs.link ? '#1a56c4' : r.attrs.color,
+                      fontWeight: r.attrs.bold ? 'bold' : undefined,
+                      fontStyle: r.attrs.italic ? 'italic' : undefined,
+                      textDecoration:
+                        r.attrs.underline || r.attrs.link
+                          ? 'underline'
+                          : undefined,
+                    }}
+                  >
+                    {r.text}
+                  </span>
+                ))}
           </div>
           {overflow.length > 0 && (
             <div

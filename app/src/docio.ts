@@ -17,6 +17,9 @@ interface ArchiveDoc {
   updatedAt: string;
   paper: PageModel['spec'];
   pages: PageModel['pages'];
+  // テキストエリアの組方向は objects[].data.writing として保存される
+  // （TextAreaData.writing）。欠落 = 'horizontal' 扱いで後方互換 —
+  // 書庫フォーマット自体の変更はない
   objects: WorldObject[];
   chains: Chain[];
   footer: boolean;
