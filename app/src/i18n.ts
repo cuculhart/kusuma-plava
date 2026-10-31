@@ -128,6 +128,10 @@ const ja = {
   'doc.footer': 'フッターにページ番号（n / 全ページ）',
   'doc.pageNum': 'ページ番号（ノンブル・下中央）',
   'doc.gridPrint': '升目を印刷に出す',
+  'doc.gridColor': '升目の線色',
+  'doc.gridAlpha': '透過',
+  'doc.gridColorTip':
+    '原稿用紙の升目線の色と濃さ — キャンバス表示と印刷の両方に適用（100%=従来の濃さ）',
   'doc.hanmen': '版面マス',
   'doc.hanmenVal': '縦$1×横$2',
   'doc.genko': '升目',
@@ -338,6 +342,10 @@ const en: Record<keyof typeof ja, string> = {
   'doc.footer': 'Footer page number (n / total)',
   'doc.pageNum': 'Page number (bottom center)',
   'doc.gridPrint': 'Print the grid',
+  'doc.gridColor': 'Grid line',
+  'doc.gridAlpha': 'opacity',
+  'doc.gridColorTip':
+    'Genkōyōshi grid line color and opacity — applies to both canvas and print (100% = default strength)',
   'doc.hanmen': 'Cells',
   'doc.hanmenVal': '$1 × $2',
   'doc.genko': 'Grid',

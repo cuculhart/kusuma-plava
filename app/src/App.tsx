@@ -45,7 +45,11 @@ import { createCanvasMeasurer } from './measure';
 import { vunitSpans, type VStyle } from './vtrender';
 import {
   DEFAULT_FONT_FAMILY,
+  DEFAULT_GRID_COLOR,
   DEFAULT_TEXT_DATA,
+  GRID_CELL_ALPHA,
+  GRID_LANE_ALPHA,
+  gridLineCss,
   IMG_KIND,
   LINE_HEIGHT,
   liveRect,
@@ -344,6 +348,10 @@ export function App() {
   // data.genko を持つ升目枠エリアはこの仕様へ枠ごと追従する。
   // 欠落の旧書庫・新規文書は 20×20
   const [genko, setGenko] = useState<GenkoGrid>(() => ({ ...GENKO_GRID }));
+  // v0.6: 升目線の色+濃さ — 文書設定（doc.json の gridColor/gridAlpha）。
+  // 透過 100% は従来の薄いグレー（0.45/0.18）と同じ見た目
+  const [gridColor, setGridColor] = useState(DEFAULT_GRID_COLOR);
+  const [gridAlpha, setGridAlpha] = useState(1);
   // v0.3: 目標字数 — アプリ設定（文書ではなく環境の好み）として
   // localStorage へ。正準値は字数（枚数入力は ×400 で畳み込む）
   const [goal, setGoal] = useState(
@@ -365,6 +373,8 @@ export function App() {
     pageNum: boolean;
     gridPrint: boolean;
     genko: GenkoGrid;
+    gridColor: string;
+    gridAlpha: number;
   };
   const histRef = useRef<{ past: Snap[]; future: Snap[]; last: number }>({
     past: [],
@@ -694,6 +704,8 @@ export function App() {
     pageNum,
     gridPrint,
     genko,
+    gridColor,
+    gridAlpha,
   });
   const applySnap = (s: Snap) => {
     applyingRef.current = true;
@@ -714,6 +726,8 @@ export function App() {
     setPageNum(s.pageNum);
     setGridPrint(s.gridPrint);
     setGenko(s.genko);
+    setGridColor(s.gridColor);
+    setGridAlpha(s.gridAlpha);
     snapRef.current = s;
     applyingRef.current = false;
   };
@@ -753,7 +767,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -786,6 +800,8 @@ export function App() {
           pageNum: true,
           gridPrint: true,
           genko: { ...GENKO_GRID },
+          gridColor: DEFAULT_GRID_COLOR,
+          gridAlpha: 1,
         };
         const cur = {
           spec: r.model.spec,
@@ -799,6 +815,8 @@ export function App() {
           pageNum: r.pageNum,
           gridPrint: r.gridPrint,
           genko: r.genko ?? { ...GENKO_GRID },
+          gridColor: r.gridColor,
+          gridAlpha: r.gridAlpha,
         };
         if (JSON.stringify(blank) === JSON.stringify(cur)) return;
         applyArchive(r);
@@ -833,6 +851,8 @@ export function App() {
           pageNum,
           gridPrint,
           genko,
+          gridColor,
+          gridAlpha,
         });
         void saveDraft(u8).then((at) => {
           if (at) setDraftAt(at);
@@ -843,7 +863,7 @@ export function App() {
     }, 1500);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha]);
 
   // F24: Alt 押下でスナップ（グリッド＋オブジェクト吸着）を一時解除
   useEffect(() => {
@@ -901,6 +921,8 @@ export function App() {
     setPageNum(true);
     setGridPrint(true);
     setGenko({ ...GENKO_GRID });
+    setGridColor(DEFAULT_GRID_COLOR);
+    setGridAlpha(1);
     createdAtRef.current = new Date().toISOString();
     dirtyRef.current = false;
     engine.setSelection([]);
@@ -920,6 +942,8 @@ export function App() {
       pageNum,
       gridPrint,
       genko,
+      gridColor,
+      gridAlpha,
     });
     const a = document.createElement('a');
     const url = URL.createObjectURL(
@@ -966,6 +990,9 @@ export function App() {
     setGridPrint(r.gridPrint);
     // v0.5: 升目仕様 — 旧書庫・不正値は 20×20 既定へ
     setGenko(r.genko ?? { ...GENKO_GRID });
+    // v0.6: 升目線の色+濃さ — unpack 側で欠落・不正値は既定へ畳み済み
+    setGridColor(r.gridColor);
+    setGridAlpha(r.gridAlpha);
     createdAtRef.current = r.createdAt || new Date().toISOString();
     dirtyRef.current = false;
     engine.setSelection([]);
@@ -1805,6 +1832,16 @@ export function App() {
                     '--cell': `${cellPx}px`,
                     '--lane': `${cellPx * RUBY_LANE_RATIO}px`,
                     '--pitch': `${cellPx * (1 + RUBY_LANE_RATIO)}px`,
+                    // v0.6: 升目線の色+濃さ（文書設定）— 透過は
+                    // 枠線0.45/ルビ欄0.18 の基準濃さへ乗算する
+                    '--grid-line': gridLineCss(
+                      gridColor,
+                      gridAlpha * GRID_CELL_ALPHA,
+                    ),
+                    '--lane-line': gridLineCss(
+                      gridColor,
+                      gridAlpha * GRID_LANE_ALPHA,
+                    ),
                     ...alignStyle,
                   } as React.CSSProperties)
                 : alignStyle
@@ -2381,6 +2418,10 @@ export function App() {
             onGridPrint: setGridPrint,
             genko,
             onGenko: applyGenko,
+            gridColor,
+            onGridColor: setGridColor,
+            gridAlpha,
+            onGridAlpha: setGridAlpha,
             hanmenCells,
             fit400fs: cellArea ? fit400fs : null,
             onFit400: fit400,
@@ -2428,6 +2469,8 @@ export function App() {
           footer={footer}
           pageNum={pageNum}
           gridPrint={gridPrint}
+          gridColor={gridColor}
+          gridAlpha={gridAlpha}
           objects={engine.doc.objects}
           sliceRuns={(o) => {
             const c = chainOf(chains, o.id);

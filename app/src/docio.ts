@@ -5,7 +5,12 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import type { WorldObject } from '@kimetron/core';
 import type { Chain, PageModel } from 'inimbal';
-import { IMG_KIND, type GenkoGrid, type ImageData } from './types';
+import {
+  DEFAULT_GRID_COLOR,
+  IMG_KIND,
+  type GenkoGrid,
+  type ImageData,
+} from './types';
 
 export const ARCHIVE_FORMAT = 'silim-murlun/1';
 export const ARCHIVE_EXT = '.slm';
@@ -32,6 +37,10 @@ interface ArchiveDoc {
   /** 1ページあたりの升目数（v0.5 — cells=1段の字数・cols=段数。
       欠落=20×20。data.genko を持つ升目枠エリアがこの仕様に追従する） */
   genko?: GenkoGrid;
+  /** 升目線の色（#rrggbb）と濃さ 0〜1（v0.6。
+      欠落=DEFAULT_GRID_COLOR・1 — 従来の薄いグレー） */
+  gridColor?: string;
+  gridAlpha?: number;
 }
 
 const EXT_OF_MIME: Record<string, string> = {
@@ -79,6 +88,8 @@ export function packArchive(input: {
   pageNum?: boolean;
   gridPrint?: boolean;
   genko?: GenkoGrid;
+  gridColor?: string;
+  gridAlpha?: number;
 }): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   let imgN = 0;
@@ -106,6 +117,8 @@ export function packArchive(input: {
     pageNum: input.pageNum,
     gridPrint: input.gridPrint,
     genko: input.genko,
+    gridColor: input.gridColor,
+    gridAlpha: input.gridAlpha,
   };
   files['doc.json'] = strToU8(JSON.stringify(doc));
   return zipSync(files);
@@ -125,6 +138,9 @@ export function unpackArchive(bytes: Uint8Array): {
   gridPrint: boolean;
   /** v0.5: 升目仕様。欠落・不正値は undefined（呼び出し側が 20×20 へ畳む） */
   genko?: GenkoGrid;
+  /** v0.6: 升目線の色と濃さ。欠落・不正値は既定（薄いグレー・濃さ1） */
+  gridColor: string;
+  gridAlpha: number;
 } {
   const files = unzipSync(bytes);
   const raw = files['doc.json'];
@@ -169,5 +185,18 @@ export function unpackArchive(bytes: Uint8Array): {
       doc.genko.cols <= 100
         ? { cells: doc.genko.cells, cols: doc.genko.cols }
         : undefined,
+    // v0.6: 升目線の色+濃さ — #rrggbb と 0〜1 の有限数以外は既定へ畳む
+    gridColor:
+      typeof doc.gridColor === 'string' &&
+      /^#[0-9a-fA-F]{6}$/.test(doc.gridColor)
+        ? doc.gridColor
+        : DEFAULT_GRID_COLOR,
+    gridAlpha:
+      typeof doc.gridAlpha === 'number' &&
+      Number.isFinite(doc.gridAlpha) &&
+      doc.gridAlpha >= 0 &&
+      doc.gridAlpha <= 1
+        ? doc.gridAlpha
+        : 1,
   };
 }

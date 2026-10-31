@@ -69,6 +69,24 @@ export const DEFAULT_TEXT_DATA: TextAreaData = {
   color: '#222222',
 };
 
+/** 升目グリッド線の既定色 — styles.css の rgba(120,140,160) と同色 */
+export const DEFAULT_GRID_COLOR = '#788ca0';
+/** 升目線（升目枠 / ルビ欄）の基準濃さ — 文書設定の透過値に乗算する。
+    透過 100% で従来の見た目（0.45 / 0.18）を再現する */
+export const GRID_CELL_ALPHA = 0.45;
+export const GRID_LANE_ALPHA = 0.18;
+
+/** 文書設定の升目線色+濃さ → CSS 変数（--grid-line/--lane-line）用の
+    rgba() 文字列。color が #rrggbb と解釈できない値は既定色へ畳む */
+export function gridLineCss(color: string, alpha: number): string {
+  const m = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})/.exec(color);
+  const [r, g, b] = m
+    ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)]
+    : [120, 140, 160];
+  const a = Math.min(1, Math.max(0, alpha));
+  return `rgba(${r},${g},${b},${a})`;
+}
+
 export const FONT_SIZES_MM = [3, 4, 5, 7, 9];
 export const FONT_FAMILIES = [
   { value: "'Noto Serif JP'", label: 'Noto Serif JP' },

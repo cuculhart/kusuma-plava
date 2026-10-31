@@ -224,6 +224,11 @@ export function RightDock({
     /** v0.5: 1ページあたりの升目仕様（cells=1段の字数・cols=段数） */
     genko: GenkoGrid;
     onGenko: (g: GenkoGrid) => void;
+    /** v0.6: 升目線の色（#rrggbb）と濃さ 0〜1 */
+    gridColor: string;
+    onGridColor: (s: string) => void;
+    gridAlpha: number;
+    onGridAlpha: (v: number) => void;
     /** v0.3: 版面に収まる升目数（v=段あたり字数・h=段数） */
     hanmenCells: { v: number; h: number };
     /** v0.3: 升目プリセットで適用される字サイズ（mm）。
@@ -261,6 +266,7 @@ export function RightDock({
           onGoal={onGoal}
           chains={chains}
           onPickChain={onSelectChain}
+          writeMode={writeMode}
           t={t}
         />
         <details className="doc-settings">
@@ -290,6 +296,7 @@ export function RightDock({
           onGoal={onGoal}
           chains={chains}
           onPickChain={onSelectChain}
+          writeMode={writeMode}
           t={t}
         />
         <div className="sub-props">
@@ -756,6 +763,10 @@ function DocProps({
   onGridPrint,
   genko,
   onGenko,
+  gridColor,
+  onGridColor,
+  gridAlpha,
+  onGridAlpha,
   hanmenCells,
   fit400fs,
   onFit400,
@@ -782,6 +793,10 @@ function DocProps({
   onGridPrint: (on: boolean) => void;
   genko: GenkoGrid;
   onGenko: (g: GenkoGrid) => void;
+  gridColor: string;
+  onGridColor: (s: string) => void;
+  gridAlpha: number;
+  onGridAlpha: (v: number) => void;
   hanmenCells: { v: number; h: number };
   fit400fs: number | null;
   onFit400: () => void;
@@ -925,6 +940,25 @@ function DocProps({
           />
           {t('doc.gridPrint')}
         </label>
+        {/* v0.6: 升目線の色+透過 — キャンバス表示と印刷の両方へ適用 */}
+        <div className="ins-row" title={t('doc.gridColorTip')}>
+          {t('doc.gridColor')}
+          <input
+            type="color"
+            value={gridColor}
+            onChange={(e) => onGridColor(e.currentTarget.value)}
+          />
+          {t('doc.gridAlpha')}
+          <input
+            type="range"
+            min={0}
+            max={100}
+            style={{ width: 90 }}
+            value={Math.round(gridAlpha * 100)}
+            onChange={(e) => onGridAlpha(+e.currentTarget.value / 100)}
+          />
+          {Math.round(gridAlpha * 100)}%
+        </div>
         <label>
           {t('doc.opacity')}
           <input

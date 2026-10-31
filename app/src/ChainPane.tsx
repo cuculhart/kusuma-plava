@@ -27,6 +27,7 @@ export function ChainPane({
   onGoal,
   chains,
   onPickChain,
+  writeMode,
   t,
 }: {
   chain: Chain;
@@ -48,6 +49,9 @@ export function ChainPane({
   /** 連鎖タブ（複数連鎖時の切替 + 連鎖別字数）。未指定なら非表示 */
   chains?: Chain[];
   onPickChain?: (chainId: string) => void;
+  /** 執筆モード — 選択範囲装飾行と字サイズ欄を畳む（v0.6。
+      字サイズは文書設定の升目仕様が自動決定するため触らせない） */
+  writeMode?: boolean;
   t: TFunc;
 }) {
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -429,6 +433,9 @@ export function ChainPane({
           )}
         </div>
       )}
+      {/* 選択範囲への部分装飾（B/I/U・色・サイズ・書体・リンク）は
+          組版モードの仕事 — 執筆モードでは行ごと畳む（v0.6） */}
+      {!writeMode && (
       <div className="chain-marks">
         <span className="chain-marks-label">{t('chain.mark')}</span>
         <button disabled={!hasSel} onClick={() => apply({ bold: true })}>
@@ -507,6 +514,7 @@ export function ChainPane({
           {t('chain.markClear')}
         </button>
       </div>
+      )}
       {areaData && (
         <div className="chain-font">
           <label>
@@ -527,6 +535,9 @@ export function ChainPane({
               )}
             </select>
           </label>
+          {/* 字サイズは文書設定の升目仕様（縦×横）が自動決定するため
+              執筆モードでは畳む（v0.6）— 組版モードでは従来どおり編集可 */}
+          {!writeMode && (
           <label>
             {t('chain.size')}
             <select
@@ -542,6 +553,7 @@ export function ChainPane({
               ))}
             </select>
           </label>
+          )}
           <label>
             {t('font.color')}
             <input

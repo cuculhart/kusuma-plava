@@ -17,6 +17,9 @@ import {
 } from 'inimbal';
 import {
   DEFAULT_TEXT_DATA,
+  GRID_CELL_ALPHA,
+  GRID_LANE_ALPHA,
+  gridLineCss,
   IMG_KIND,
   LINE_HEIGHT,
   MM_PX,
@@ -38,6 +41,8 @@ export function Printout({
   footer,
   pageNum,
   gridPrint,
+  gridColor,
+  gridAlpha,
   objects,
   sliceRuns,
   areaAlone,
@@ -51,6 +56,9 @@ export function Printout({
   pageNum: boolean;
   /** v0.3: 升目の印刷出し分け — OFF で縦書き升目グリッドを抜く */
   gridPrint: boolean;
+  /** v0.6: 升目線の色（#rrggbb）と濃さ 0〜1 — 文書設定 */
+  gridColor: string;
+  gridAlpha: number;
   objects: WorldObject[];
   /** テキストエリア → 表示中スライスのラン列（連鎖レイアウト＋装飾解決済み） */
   sliceRuns: (o: WorldObject) => TextRun[];
@@ -282,6 +290,16 @@ export function Printout({
                             '--cell': `${d.fontSize}mm`,
                             '--lane': `${d.fontSize * RUBY_LANE_RATIO}mm`,
                             '--pitch': `${d.fontSize * (1 + RUBY_LANE_RATIO)}mm`,
+                            // v0.6: 升目線の色+濃さ（文書設定）—
+                            // キャンバス側と同じ規則で透過を乗算する
+                            '--grid-line': gridLineCss(
+                              gridColor,
+                              gridAlpha * GRID_CELL_ALPHA,
+                            ),
+                            '--lane-line': gridLineCss(
+                              gridColor,
+                              gridAlpha * GRID_LANE_ALPHA,
+                            ),
                           } as React.CSSProperties)
                         : {}),
                     }}

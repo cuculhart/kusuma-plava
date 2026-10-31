@@ -369,7 +369,10 @@ body,
   letter-spacing: 0;
   text-align: start;
   line-height: var(--pitch);
-  --cell-line: rgba(120, 140, 160, 0.45);
+  /* 升目線 — --grid-line=升目の枠線、--lane-line=段間のルビ欄線。
+     文書設定（升目の線色＋透過）が inline で上書きする。
+     ここは既定の薄いグレー（透過100%時の見た目） */
+  --grid-line: rgba(120, 140, 160, 0.45);
   --lane-line: rgba(120, 140, 160, 0.18);
   /* .parea には TEXT_PAD の余白がある — 位相基準を内容ボックスへ
      寄せて字セルと本文の開始隅を一致させる */
@@ -382,15 +385,15 @@ body,
       var(--lane-line) 1px,
       transparent 1px,
       transparent calc(var(--lane) / 2),
-      var(--cell-line) calc(var(--lane) / 2),
-      var(--cell-line) calc(var(--lane) / 2 + 1px),
+      var(--grid-line) calc(var(--lane) / 2),
+      var(--grid-line) calc(var(--lane) / 2 + 1px),
       transparent calc(var(--lane) / 2 + 1px),
       transparent var(--pitch)
     ),
     repeating-linear-gradient(
       to bottom,
-      var(--cell-line) 0,
-      var(--cell-line) 1px,
+      var(--grid-line) 0,
+      var(--grid-line) 1px,
       transparent 1px,
       transparent var(--cell)
     );
