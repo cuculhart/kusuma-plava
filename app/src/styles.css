@@ -310,6 +310,17 @@ body,
   width: 48px;
 }
 
+/* v0.5: 升目仕様（縦×横）の入力行 — ラベル＋2つの整数欄 */
+.doc-props-grid .genko-inputs {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.doc-props-grid .genko-inputs input {
+  width: 44px;
+}
+
 /* 暫定CSS撤去（kimetron 1.4.1）: .ki-obj の枠幅は style.width 由来に
    なったため、rect は kimetron ネイティブの描画に任せる。
    ellipse/line は .ki-shape 側のスタイルが適用される。 */
@@ -320,9 +331,17 @@ body,
   border-radius: 3px;
 }
 
+/* kimetron の .ki-obj は box-sizing:border-box + 常時1px枠
+   （borderWidth: o.style?.width ?? 1）— そのままでは .ta の内容箱が
+   fit() へ渡す rect−2×TEXT_PAD_MM より縦横それぞれ 2 screen px 小さく、
+   升目ちょうどの升目枠では各段の末字（と末段）が折返し/クリップされる。
+   負マージン+2px 拡張で .ta を枠線込みの外郭へ広げ、計測箱と一致させる。
+   （枠線は .ta の背景なし越しにそのまま見える。枠幅が 1px 前提 — テキスト
+   エリアの style.width は未使用） */
 .ta {
-  width: 100%;
-  height: 100%;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  margin: -1px;
   box-sizing: border-box;
   position: relative;
   color: #222;

@@ -1,7 +1,7 @@
 // 右ペイン（選択駆動・F12）— 選択種別ごとに表示を切り替える。
 // 右方向に折りたたみ可（G4）。
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   isShapeKind,
   shapeAnchors,
@@ -13,7 +13,7 @@ import type { Chain, PaperSize, TextAttrs } from 'inimbal';
 import type { TFunc } from './i18n';
 import { tf } from './i18n';
 import { ChainPane } from './ChainPane';
-import type { ImageData, TextAreaData } from './types';
+import type { GenkoGrid, ImageData, TextAreaData } from './types';
 import { FONT_SIZES_MM, IMG_KIND, MM_PX, TEXT_KIND } from './types';
 import { fontOptions, useSysFonts } from './useSysFonts';
 
@@ -221,12 +221,15 @@ export function RightDock({
     /** v0.3: 升目を印刷に出すか */
     gridPrint: boolean;
     onGridPrint: (on: boolean) => void;
+    /** v0.5: 1ページあたりの升目仕様（cells=1段の字数・cols=段数） */
+    genko: GenkoGrid;
+    onGenko: (g: GenkoGrid) => void;
     /** v0.3: 版面に収まる升目数（v=段あたり字数・h=段数） */
     hanmenCells: { v: number; h: number };
-    /** v0.3: 400字詰めプリセットで適用される字サイズ（mm）。
+    /** v0.3: 升目プリセットで適用される字サイズ（mm）。
         適用先エリアが無い・算出不能なら null（ボタン無効） */
     fit400fs: number | null;
-    /** v0.3: 字サイズを版面 20×20 に合わせる */
+    /** v0.5: 枠と字サイズを文書設定の升目仕様に合わせる */
     onFit400: () => void;
   };
   t: TFunc;
@@ -751,6 +754,8 @@ function DocProps({
   onPageNum,
   gridPrint,
   onGridPrint,
+  genko,
+  onGenko,
   hanmenCells,
   fit400fs,
   onFit400,
@@ -775,6 +780,8 @@ function DocProps({
   onPageNum: (on: boolean) => void;
   gridPrint: boolean;
   onGridPrint: (on: boolean) => void;
+  genko: GenkoGrid;
+  onGenko: (g: GenkoGrid) => void;
   hanmenCells: { v: number; h: number };
   fit400fs: number | null;
   onFit400: () => void;
@@ -782,6 +789,41 @@ function DocProps({
 }) {
   const [ins, setIns] = useState(1);
   const fonts = fontOptions(useSysFonts());
+  // v0.5: 升目仕様入力 — 確定値のみ onGenko へ（入力途中の
+  // 空欄・範囲外は無視して確定値へ戻す）。外部変更（書庫
+  // 読込・Undo）へは props → state の同期で追従する
+  const [cellsIn, setCellsIn] = useState(String(genko.cells));
+  const [colsIn, setColsIn] = useState(String(genko.cols));
+  useEffect(() => {
+    setCellsIn(String(genko.cells));
+    setColsIn(String(genko.cols));
+  }, [genko.cells, genko.cols]);
+  const genkoInput = (axis: 'cells' | 'cols') => (
+    <input
+      type="number"
+      min={1}
+      max={100}
+      step={1}
+      value={axis === 'cells' ? cellsIn : colsIn}
+      onChange={(e) => {
+        const v = e.currentTarget.value;
+        if (axis === 'cells') setCellsIn(v);
+        else setColsIn(v);
+        const n = Number(v);
+        if (!Number.isInteger(n) || n < 1 || n > 100) return;
+        onGenko(
+          axis === 'cells'
+            ? { cells: n, cols: genko.cols }
+            : { cells: genko.cells, cols: n },
+        );
+      }}
+      onBlur={() => {
+        // 確定値へ戻す（無効入力は破棄）
+        setCellsIn(String(genko.cells));
+        setColsIn(String(genko.cols));
+      }}
+    />
+  );
   return (
     <div className="doc-props">
       <header>
@@ -819,14 +861,30 @@ function DocProps({
         <div title={t('status.hanmenTip')}>
           {t('doc.hanmen')}: {tf(t, 'doc.hanmenVal', hanmenCells.v, hanmenCells.h)}
         </div>
-        {/* v0.3: 400字詰めプリセット — 代表エリア（連鎖先頭→auto）を
-            縦20字×横20段の升目グリッド枠へ作り直す（枠+字サイズ）。
-            升目表示と同じ計算で算出した mm をツールチップに出す */}
+        {/* v0.5: 1ページあたりの升目仕様 — 縦=1段の字数 × 横=段数。
+            確定値のみ適用（1〜100の整数）。升目枠は新仕様へ作り直される */}
+        <div className="ins-row" title={t('doc.genkoTip')}>
+          {t('doc.genko')}
+          <span className="genko-inputs">
+            {t('doc.genkoV')}
+            {genkoInput('cells')}
+            {t('doc.genkoChars')} × {t('doc.genkoH')}
+            {genkoInput('cols')}
+            {t('doc.genkoRows')}
+          </span>
+        </div>
+        {/* v0.3: 升目プリセット — 代表エリア（連鎖先頭→auto）を
+            文書設定の升目仕様（v0.5。既定 縦20字×横20段=400字詰）の
+            グリッド枠へ作り直す（枠+字サイズ）。升目表示と同じ計算で
+            算出した mm をツールチップに出す */}
         <button
           disabled={fit400fs == null}
           title={tf(
             t,
             'doc.fit400Tip',
+            genko.cells,
+            genko.cols,
+            genko.cells * genko.cols,
             fit400fs != null ? +fit400fs.toFixed(2) : '—',
           )}
           onClick={onFit400}

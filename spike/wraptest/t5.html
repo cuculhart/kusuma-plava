@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  .s { writing-mode:vertical-rl; font-variant-east-asian:full-width;
+    letter-spacing:0; line-height:31.749px; font-size:19.843px;
+    font-family:'Yu Mincho',serif; height:396.88px; white-space:pre-wrap; }
+  .s rt { font-size:52%; }
+</style>
+<div class="s" id="s"></div>
+<div id="out"></div>
+<script>
+  const s = document.getElementById('s');
+  let out = '';
+  for (const n of [4,5,6,7,8,10]) {
+    const yomi = 'あ'.repeat(n);
+    s.innerHTML = `<ruby>漢字<rt>${yomi}</rt></ruby>`;
+    const r = s.querySelector('ruby').getBoundingClientRect();
+    out += `yomi=${n} rubyH=${r.height.toFixed(2)} (2cells=39.69, rt~${(n*19.843*0.52).toFixed(1)})\n`;
+  }
+  document.getElementById('out').textContent = out;
+</script>

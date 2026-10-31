@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  :root { --fs: 19.843px; }
+  .ki-obj { box-sizing:border-box; border:1px solid rgba(90,110,140,.4);
+    width:642.52px; height:404.41px; overflow:hidden; position:relative; }
+  .ta { width:calc(100% + 2px); height:calc(100% + 2px); margin:-1px;
+    box-sizing:border-box; padding:3.7795px; font-size:var(--fs);
+    line-height:1.4; font-family:'Yu Mincho','Hiragino Mincho ProN',serif;
+    position:relative; color:#222; }
+  .ta-slice { width:100%; height:100%; overflow:hidden; white-space:pre-wrap; overflow-wrap:break-word; }
+  .ta-slice.vt { writing-mode:vertical-rl; font-variant-east-asian:full-width;
+    letter-spacing:0; text-align:start; line-height:var(--pitch); }
+  .ta-slice.vt rt { font-size:52%; }
+</style>
+<div class="ki-obj"><div class="ta"><div class="ta-slice vt" id="s" style="--cell:19.843px;--lane:11.906px;--pitch:31.749px"></div></div></div>
+<div id="out"></div>
+<script>
+  const s = document.getElementById('s');
+  // 18 chars + ruby(2 base, 8 yomi) = fit counts 20 cells → col must hold all
+  s.innerHTML = '<span>あいうえおかきくけこさしすせそたちつ</span><ruby>漢字<rt>フラクトギャル</rt></ruby><span>と</span>';
+  // add another column for comparison: 20 plain chars
+  s.innerHTML += 'はひふへほまみむめもやゆよわをんぬねのに';
+  let out = '';
+  const sr = s.getBoundingClientRect();
+  out += `slice w=${sr.width.toFixed(2)} h=${sr.height.toFixed(2)}\n`;
+  for (const el of s.children) {
+    const r = el.getBoundingClientRect();
+    out += `${el.tagName} "${(el.textContent||'').slice(0,8)}" x=${r.x.toFixed(2)} y=${r.y.toFixed(2)} w=${r.width.toFixed(2)} h=${r.height.toFixed(2)}\n`;
+  }
+  document.getElementById('out').textContent = out;
+</script>

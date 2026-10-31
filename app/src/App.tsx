@@ -339,6 +339,10 @@ export function App() {
   // v0.3: 升目の印刷出し分け — 文書設定。既定 ON（WYSIWYG 整合:
   // キャンバスに見える升目はそのまま印刷に出る）
   const [gridPrint, setGridPrint] = useState(true);
+  // v0.5: 1ページあたりの升目数 — 文書設定（doc.json の genko）。
+  // data.genko を持つ升目枠エリアはこの仕様へ枠ごと追従する。
+  // 欠落の旧書庫・新規文書は 20×20
+  const [genko, setGenko] = useState<GenkoGrid>(() => ({ ...GENKO_GRID }));
   // v0.3: 目標字数 — アプリ設定（文書ではなく環境の好み）として
   // localStorage へ。正準値は字数（枚数入力は ×400 で畳み込む）
   const [goal, setGoal] = useState(
@@ -359,6 +363,7 @@ export function App() {
     docFont: string;
     pageNum: boolean;
     gridPrint: boolean;
+    genko: GenkoGrid;
   };
   const histRef = useRef<{ past: Snap[]; future: Snap[]; last: number }>({
     past: [],
@@ -622,7 +627,7 @@ export function App() {
     // 末尾へ繋ぐ — あふれが次ページへそのまま流れる
     if (writeModeRef.current) {
       const slot = next.pages[next.pages.length - 1].slot;
-      const f = genkoFrame(next.spec, slot, GENKO_GRID);
+      const f = genkoFrame(next.spec, slot, genko);
       if (f) {
         const id = nextId('ta');
         content.push({
@@ -639,7 +644,7 @@ export function App() {
             fontSize: f.fontSize,
             writing: 'vertical-rl',
             auto: true,
-            genko: { ...GENKO_GRID },
+            genko: { ...genko },
           } satisfies TextAreaData,
         });
         const target =
@@ -687,6 +692,7 @@ export function App() {
     docFont,
     pageNum,
     gridPrint,
+    genko,
   });
   const applySnap = (s: Snap) => {
     applyingRef.current = true;
@@ -706,6 +712,7 @@ export function App() {
     setDocFont(s.docFont);
     setPageNum(s.pageNum);
     setGridPrint(s.gridPrint);
+    setGenko(s.genko);
     snapRef.current = s;
     applyingRef.current = false;
   };
@@ -745,7 +752,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -777,6 +784,7 @@ export function App() {
           docFont: DEFAULT_FONT_FAMILY,
           pageNum: false,
           gridPrint: true,
+          genko: { ...GENKO_GRID },
         };
         const cur = {
           spec: r.model.spec,
@@ -789,6 +797,7 @@ export function App() {
           docFont: r.docFont ?? DEFAULT_FONT_FAMILY,
           pageNum: r.pageNum,
           gridPrint: r.gridPrint,
+          genko: r.genko ?? { ...GENKO_GRID },
         };
         if (JSON.stringify(blank) === JSON.stringify(cur)) return;
         applyArchive(r);
@@ -822,6 +831,7 @@ export function App() {
           docFont,
           pageNum,
           gridPrint,
+          genko,
         });
         void saveDraft(u8).then((at) => {
           if (at) setDraftAt(at);
@@ -832,7 +842,7 @@ export function App() {
     }, 1500);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko]);
 
   // F24: Alt 押下でスナップ（グリッド＋オブジェクト吸着）を一時解除
   useEffect(() => {
@@ -889,6 +899,7 @@ export function App() {
     setDocFont(DEFAULT_FONT_FAMILY);
     setPageNum(false);
     setGridPrint(true);
+    setGenko({ ...GENKO_GRID });
     createdAtRef.current = new Date().toISOString();
     dirtyRef.current = false;
     engine.setSelection([]);
@@ -907,6 +918,7 @@ export function App() {
       docFont,
       pageNum,
       gridPrint,
+      genko,
     });
     const a = document.createElement('a');
     const url = URL.createObjectURL(
@@ -951,6 +963,8 @@ export function App() {
     setDocFont(r.docFont ?? DEFAULT_FONT_FAMILY);
     setPageNum(r.pageNum);
     setGridPrint(r.gridPrint);
+    // v0.5: 升目仕様 — 旧書庫・不正値は 20×20 既定へ
+    setGenko(r.genko ?? { ...GENKO_GRID });
     createdAtRef.current = r.createdAt || new Date().toISOString();
     dirtyRef.current = false;
     engine.setSelection([]);
@@ -1576,20 +1590,73 @@ export function App() {
     };
   })();
 
+  // ── v0.5: 升目仕様（縦N字×横N段）の文書設定 ──
+  // data.genko を持つ升目枠エリアのうち、旧仕様の中央寄せ枠と
+  // 矩形一致しているもの（=ユーザーが動かしていない枠）を新仕様の
+  // 枠へ作り直す — 用紙変更時の refitWritingAreas と同じ追従規則。
+  // 枠から外れているエリア・genko の無いエリアは触らない。
+  const applyGenko = (g: GenkoGrid) => {
+    if (
+      !Number.isInteger(g.cells) ||
+      !Number.isInteger(g.cols) ||
+      g.cells < 1 ||
+      g.cells > 100 ||
+      g.cols < 1 ||
+      g.cols > 100
+    )
+      return;
+    setGenko(g);
+    const rects = pageRects(model.spec, model.pages);
+    const eps = 0.01; // mm — refitWritingAreas と同じ許容誤差
+    const objects = engine.doc.objects.map((o) => {
+      if (o.kind !== TEXT_KIND) return o;
+      const d = o.data as TextAreaData | undefined;
+      if (!d?.genko) return o;
+      const cx = o.x + o.w / 2;
+      const cy = o.y + o.h / 2;
+      const hit = rects.find(
+        (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
+      );
+      if (!hit) return o;
+      const old = genkoFrame(model.spec, hit.slot, d.genko);
+      if (
+        !old ||
+        Math.abs(o.x - old.x) > eps ||
+        Math.abs(o.y - old.y) > eps ||
+        Math.abs(o.w - old.w) > eps ||
+        Math.abs(o.h - old.h) > eps
+      )
+        return o;
+      const f = genkoFrame(model.spec, hit.slot, g);
+      if (!f) return o;
+      return {
+        ...o,
+        x: f.x,
+        y: f.y,
+        w: f.w,
+        h: f.h,
+        data: { ...d, fontSize: f.fontSize, genko: { ...g } },
+      };
+    });
+    engine.setDoc({ ...engine.doc, objects });
+  };
+
   // ── v0.3: 「400字詰め」プリセット ──
   // 升目枠の字サイズ（genkoFontSize と同じ計算）:
-  //   fs = min(版面高/20, 版面幅/(20×(1+RUBY_LANE_RATIO)))
-  // min なので拘束する次元がちょうど20、もう一方は20以下に収まる
-  // （A4縦なら段ピッチが効いて fs≈5.25mm → 枠内寸 105×168mm）。
+  //   fs = min(版面高/cells, 版面幅/(cols×(1+RUBY_LANE_RATIO)))
+  // min なので拘束する次元がちょうど升目数、もう一方は以下に収まる
+  // （A4縦 20×20 なら段ピッチが効いて fs≈5.25mm → 枠内寸 105×168mm）。
   // 極端な値（小さな用紙で <1mm 等）もそのまま適用する —
   // 0以下・非有限のみ抑止。適用先は升目計算と同じ代表エリア
   // （連鎖先頭 → data.auto 順の cellArea）。
-  // v0.4: 字サイズだけでなく枠そのものを 20×20 升の中央寄せ矩形へ
+  // v0.4: 字サイズだけでなく枠そのものを升目の中央寄せ矩形へ
   // 作り直し、data.genko を立てる（以後は用紙変更へ枠ごと追従）。
+  // v0.5: 固定の 20×20 ではなく文書設定の升目仕様（genko state）を
+  // 適用する — 既定は 20×20 なので従来の 400字詰と同一結果。
   // エリアが用紙上に無い等で枠を組めない時は字サイズのみ合わせる
   // 旧挙動へ退く。部分書式の fontSize マークは触らずエリア既定のみ
   // 更新 — Inspector サイズ欄と同じ patchAreaData 経路で再レイアウト。
-  const fit400fs = genkoFontSize(spec, GENKO_GRID);
+  const fit400fs = genkoFontSize(spec, genko);
   const fit400 = () => {
     if (fit400fs == null || !cellArea) return;
     const cx = cellArea.x + cellArea.w / 2;
@@ -1597,12 +1664,12 @@ export function App() {
     const hit = pageRects(spec, model.pages).find(
       (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
     );
-    const f = hit ? genkoFrame(spec, hit.slot, GENKO_GRID) : null;
+    const f = hit ? genkoFrame(spec, hit.slot, genko) : null;
     if (f) {
       patchObject(cellArea.id, { x: f.x, y: f.y, w: f.w, h: f.h });
       patchAreaData(cellArea.id, {
         fontSize: f.fontSize,
-        genko: { ...GENKO_GRID },
+        genko: { ...genko },
       });
     } else {
       patchAreaData(cellArea.id, { fontSize: fit400fs });
@@ -2310,6 +2377,8 @@ export function App() {
             onPageNum: setPageNum,
             gridPrint,
             onGridPrint: setGridPrint,
+            genko,
+            onGenko: applyGenko,
             hanmenCells,
             fit400fs: cellArea ? fit400fs : null,
             onFit400: fit400,

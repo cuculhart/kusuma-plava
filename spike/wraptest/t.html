@@ -1,0 +1,41 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  /* 再現条件: A4縦 20x20 升目枠 — fs=5.25mm, MM_PX=96/25.4, z=1 */
+  :root { --fs: 19.843px; } /* 5.25mm * 96/25.4 ≈ 19.843px */
+  .ta {
+    width: 642.52px;   /* 170mm */
+    height: 404.41px;  /* 107mm */
+    box-sizing: border-box;
+    padding: 3.7795px; /* 1mm */
+    font-size: var(--fs);
+    line-height: 1.4;
+    font-family: 'Noto Serif JP','Yu Mincho','Hiragino Mincho ProN',serif;
+    position: relative;
+    color: #222;
+  }
+  .ta-slice { width:100%; height:100%; overflow:hidden; white-space:pre-wrap; overflow-wrap:break-word; }
+  .ta-slice.vt {
+    writing-mode: vertical-rl;
+    font-variant-east-asian: full-width;
+    letter-spacing: 0;
+    text-align: start;
+    line-height: var(--pitch);
+  }
+</style>
+<div class="ta"><div class="ta-slice vt" id="s" style="--cell:19.843px;--lane:11.906px;--pitch:31.749px"></div></div>
+<div id="out"></div>
+<script>
+  const s = document.getElementById('s');
+  const chars = 'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめも';
+  s.innerHTML = chars.split('').map((c,i)=>`<span data-i="${i}">${c}</span>`).join('');
+  const rows = [];
+  let out = '';
+  for (const sp of s.querySelectorAll('span')) {
+    const r = sp.getBoundingClientRect();
+    out += `${sp.dataset.i} x=${r.x.toFixed(2)} y=${r.y.toFixed(2)} w=${r.width.toFixed(2)} h=${r.height.toFixed(2)}\n`;
+  }
+  const sr = s.getBoundingClientRect();
+  out += `slice x=${sr.x.toFixed(2)} y=${sr.y.toFixed(2)} w=${sr.width.toFixed(2)} h=${sr.height.toFixed(2)}\n`;
+  document.getElementById('out').textContent = out;
+</script>

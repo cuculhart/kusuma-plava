@@ -5,7 +5,7 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import type { WorldObject } from '@kimetron/core';
 import type { Chain, PageModel } from 'inimbal';
-import { IMG_KIND, type ImageData } from './types';
+import { IMG_KIND, type GenkoGrid, type ImageData } from './types';
 
 export const ARCHIVE_FORMAT = 'silim-murlun/1';
 export const ARCHIVE_EXT = '.slm';
@@ -29,6 +29,9 @@ interface ArchiveDoc {
   pageNum?: boolean;
   /** 升目を印刷に出すか（v0.3。欠落=true — 旧書庫は WYSIWYG 印刷だった） */
   gridPrint?: boolean;
+  /** 1ページあたりの升目数（v0.5 — cells=1段の字数・cols=段数。
+      欠落=20×20。data.genko を持つ升目枠エリアがこの仕様に追従する） */
+  genko?: GenkoGrid;
 }
 
 const EXT_OF_MIME: Record<string, string> = {
@@ -75,6 +78,7 @@ export function packArchive(input: {
   docFont?: string;
   pageNum?: boolean;
   gridPrint?: boolean;
+  genko?: GenkoGrid;
 }): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   let imgN = 0;
@@ -101,6 +105,7 @@ export function packArchive(input: {
     docFont: input.docFont,
     pageNum: input.pageNum,
     gridPrint: input.gridPrint,
+    genko: input.genko,
   };
   files['doc.json'] = strToU8(JSON.stringify(doc));
   return zipSync(files);
@@ -118,6 +123,8 @@ export function unpackArchive(bytes: Uint8Array): {
   docFont?: string;
   pageNum: boolean;
   gridPrint: boolean;
+  /** v0.5: 升目仕様。欠落・不正値は undefined（呼び出し側が 20×20 へ畳む） */
+  genko?: GenkoGrid;
 } {
   const files = unzipSync(bytes);
   const raw = files['doc.json'];
@@ -151,5 +158,16 @@ export function unpackArchive(bytes: Uint8Array): {
     // （ページ番号なし / 升目は印刷に出る）
     pageNum: doc.pageNum === true,
     gridPrint: doc.gridPrint !== false,
+    // v0.5: 升目仕様 — 1〜100 の整数以外（旧書庫の欠落含む）は捨てる
+    genko:
+      doc.genko &&
+      Number.isInteger(doc.genko.cells) &&
+      Number.isInteger(doc.genko.cols) &&
+      doc.genko.cells >= 1 &&
+      doc.genko.cells <= 100 &&
+      doc.genko.cols >= 1 &&
+      doc.genko.cols <= 100
+        ? { cells: doc.genko.cells, cols: doc.genko.cols }
+        : undefined,
   };
 }

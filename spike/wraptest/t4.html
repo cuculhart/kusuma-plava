@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  :root { --fs: 19.843px; }
+  .s { writing-mode:vertical-rl; font-variant-east-asian:full-width;
+    letter-spacing:0; text-align:start; line-height:var(--pitch);
+    font-size:var(--fs); font-family:'Yu Mincho',serif;
+    height:396.88px; white-space:pre-wrap; }
+  .s rt { font-size:52%; }
+  .a rt { }
+  .b ruby { ruby-overhang: none; }
+  .c rt { ruby-align: space-around; }
+  .d rt { display:block; overflow:hidden; max-block-size:1.05em; }
+  .e ruby { ruby-position: under; }
+</style>
+<div class="s a" id="a" style="--pitch:31.749px"></div>
+<div class="s b" id="b" style="--pitch:31.749px"></div>
+<div class="s c" id="c" style="--pitch:31.749px"></div>
+<div class="s d" id="d" style="--pitch:31.749px"></div>
+<div class="s e" id="e" style="--pitch:31.749px"></div>
+<div id="out"></div>
+<script>
+  let out = '';
+  for (const id of ['a','b','c','d','e']) {
+    const s = document.getElementById(id);
+    s.innerHTML = '<ruby>漢字<rt>フラクトギャル</rt></ruby><ruby>漢字<rt>かんじ</rt></ruby>';
+    for (const el of s.querySelectorAll('ruby')) {
+      const r = el.getBoundingClientRect();
+      out += `${id} ruby "${el.firstChild.textContent}" h=${r.height.toFixed(2)} (2cells=39.69)\n`;
+    }
+  }
+  document.getElementById('out').textContent = out;
+</script>
