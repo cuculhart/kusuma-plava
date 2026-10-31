@@ -6,7 +6,7 @@
 
 > 木漏れ日と花筏。文を書けば、組版が流れ出す。
 
-変更履歴は [CHANGELOG](CHANGELOG.md) を参照（最新: v0.3.0）。
+変更履歴は [CHANGELOG](CHANGELOG.md) を参照。
 
 ## 機能
 
