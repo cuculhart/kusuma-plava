@@ -1,0 +1,1065 @@
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  font-family: sans-serif;
+  overflow: hidden; /* 中ボタンオートスクロール/絶対配置要素のはみ出しを抑止 */
+}
+
+/* ── テーマ変数 ──
+   standard = OS の prefers-color-scheme に追従
+   （下で light 系を既定値として定義し、dark メディアクエリで上書き） */
+.app,
+.app[data-theme='standard'],
+.app[data-theme='light'] {
+  --bg: #ececf0;
+  --surface: #ffffff;
+  --surface2: #f3f3f6;
+  --line: #c5c5cf;
+  --text: #22222a;
+  --muted: #787882;
+  --accent: #a06;
+  --sel: #c33;
+  --shadow: rgba(0, 0, 0, 0.22);
+  /* kimetron 側の変数もここで制御 */
+  --ki-bg: var(--bg);
+  --ki-grid: rgba(80, 120, 160, 0.1);
+  --ki-grid-major: rgba(80, 120, 160, 0.25);
+  --ki-sel: #3a7bd5;
+  --ki-edge-line: #7d8fa3;
+}
+
+.app[data-theme='dark'] {
+  --bg: #232733;
+  --surface: #2c3140;
+  --surface2: #333849;
+  --line: #485064;
+  --text: #dde2ee;
+  --muted: #8b93a8;
+  --accent: #c86ab0;
+  --sel: #e07060;
+  --shadow: rgba(0, 0, 0, 0.5);
+  --ki-grid: rgba(140, 170, 220, 0.1);
+  --ki-grid-major: rgba(140, 170, 220, 0.24);
+  --ki-edge-line: #5f6d85;
+}
+
+/* standard + OS dark → ダーク系変数を適用 */
+@media (prefers-color-scheme: dark) {
+  .app[data-theme='standard'] {
+    --bg: #232733;
+    --surface: #2c3140;
+    --surface2: #333849;
+    --line: #485064;
+    --text: #dde2ee;
+    --muted: #8b93a8;
+    --accent: #c86ab0;
+    --sel: #e07060;
+    --shadow: rgba(0, 0, 0, 0.5);
+    --ki-grid: rgba(140, 170, 220, 0.1);
+    --ki-grid-major: rgba(140, 170, 220, 0.24);
+    --ki-edge-line: #5f6d85;
+  }
+}
+
+/* quiet — 低彩度・低コントラスト（ライトとは別系統の落ち着き系） */
+.app[data-theme='quiet'] {
+  --bg: #eae5da;
+  --surface: #f2efe7;
+  --surface2: #e4dfd3;
+  --line: #c9c2b2;
+  --text: #57524a;
+  --muted: #9a9078;
+  --accent: #7d6d80;
+  --sel: #a08787;
+  --shadow: rgba(60, 50, 30, 0.12);
+  --ki-grid: rgba(120, 110, 90, 0.07);
+  --ki-grid-major: rgba(120, 110, 90, 0.15);
+  --ki-edge-line: #a8a396;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ── 左: メニューペイン（折りたたみ可） ── */
+.left-menu {
+  width: 150px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+  background: var(--surface2);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.left-menu.collapsed {
+  width: 44px;
+  align-items: center;
+}
+
+.m-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.m-item:hover {
+  background: var(--bg);
+}
+
+.m-item.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.m-ic {
+  width: 20px;
+  text-align: center;
+  flex: none;
+}
+
+.m-theme select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.m-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--line);
+  opacity: 0.5;
+}
+
+.m-ver {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.m-toggle .m-label {
+  font-weight: bold;
+}
+
+/* ── 中央: キャンバス + ワイヤーオーバーレイ ── */
+.canvas-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  overflow: hidden; /* ルーラー/ゴースト等のはみ出しをクリップ */
+}
+
+.canvas-wrap .ki-canvas {
+  background: var(--bg);
+}
+
+.wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.wire {
+  stroke: var(--accent);
+  stroke-width: 2;
+  fill: none;
+  stroke-dasharray: 6 3;
+}
+
+.wire.sel {
+  stroke: var(--sel);
+  stroke-width: 3;
+}
+
+.wires g:hover .wire {
+  stroke: var(--sel);
+}
+
+.wire-hit {
+  stroke: transparent;
+  stroke-width: 12;
+  fill: none;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+/* ── シェイプ頂点グリップ（F21 → kimetron P48） ── */
+/* 頂点ハンドルは kimetron の .ki-vtx が描画・入力を担う。
+   シェイプツール起動中は描画オーバーレイの下に出ないよう隠す。 */
+.canvas-wrap.drawing .ki-vtx {
+  display: none;
+}
+
+/* ── ページ枠 ── */
+.ki-kind-page {
+  border: 1px dashed var(--muted);
+  box-shadow: 0 1px 4px var(--shadow);
+}
+
+/* B-8: ページタグは top:-1.7em で枠の上に出るため、
+   ki-obj の overflow:hidden に刈られないよう枠だけ可視化する */
+.ki-obj:has(.page-tag) {
+  overflow: visible;
+}
+
+.page-tag {
+  position: absolute;
+  top: -1.7em;
+  left: 0;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.page-tag button {
+  border: 1px solid var(--line);
+  background: var(--surface2);
+  color: var(--muted);
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 1px 5px;
+  cursor: pointer;
+}
+
+.page-tag button:hover {
+  background: var(--bg);
+}
+
+/* N-19: 上下スクロール用フローティングUI */
+.scroll-nav {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 30;
+}
+
+.scroll-nav button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.scroll-nav button:hover {
+  background: var(--bg);
+  opacity: 1;
+}
+
+/* アクティブページ（枠クリックで選択・削除/ナビの対象） */
+.page-tag.active > span {
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.page-tag.active > span::before {
+  content: '● ';
+  font-size: 8px;
+}
+
+.doc-props-grid .ins-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.doc-props-grid .ins-row input {
+  width: 48px;
+}
+
+/* 暫定CSS撤去（kimetron 1.4.1）: .ki-obj の枠幅は style.width 由来に
+   なったため、rect は kimetron ネイティブの描画に任せる。
+   ellipse/line は .ki-shape 側のスタイルが適用される。 */
+
+/* ── テキストエリア（表示専用スライス） ── */
+.ki-kind-textarea {
+  border: 1px solid rgba(90, 110, 140, 0.4);
+  border-radius: 3px;
+}
+
+.ta {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  position: relative;
+  color: #222;
+}
+
+.ta-slice {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.oflabel {
+  position: absolute;
+  right: 2px;
+  top: -1.7em;
+  font-size: 11px;
+  color: var(--sel);
+  cursor: pointer;
+  background: rgba(255, 240, 240, 0.92);
+  padding: 0 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* ── 空ドキュメントの初見ヒント ── */
+.canvas-hint {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  padding: 0.6em 1.2em;
+  color: var(--ibm-gray, #666);
+  font-size: 14px;
+  text-align: center;
+  pointer-events: none;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px dashed #bbb;
+  border-radius: 4px;
+  z-index: 30;
+}
+
+/* ── リンクモード ── */
+.link-mode .ki-kind-textarea {
+  cursor: crosshair;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.ta.link-from {
+  box-shadow: 0 0 0 3px var(--accent);
+  border-radius: 3px;
+}
+
+/* ── 右: プロパティドック ── */
+.right-dock {
+  width: 300px;
+  flex: none;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* G4: 右方向へ折りたたみ */
+.right-dock.collapsed {
+  width: 24px;
+  overflow: hidden;
+}
+
+.dock-toggle {
+  flex: none;
+  height: 40px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface2);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.right-dock.collapsed .dock-toggle {
+  height: 100%;
+}
+
+.chain-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.chain-pane header {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chain-pane header button {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.chain-text {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  padding: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+  font-family: inherit;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.chain-overflow {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--sel);
+  border-top: 1px solid var(--line);
+}
+
+.chain-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
+.chain-marks button,
+.chain-marks select,
+.chain-marks input {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 1px 6px;
+}
+
+.chain-marks button:disabled,
+.chain-marks select:disabled,
+.chain-marks input:disabled {
+  opacity: 0.45;
+}
+
+.chain-marks input[type='color'] {
+  padding: 0 2px;
+  width: 26px;
+  height: 22px;
+}
+
+.chain-marks-font {
+  width: 90px;
+}
+
+.chain-marks-link {
+  width: 110px;
+}
+
+.chain-area-link {
+  width: 140px;
+}
+
+.chain-font {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
+.chain-font label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.chain-font select,
+.chain-font input {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.chain-font-family {
+  width: 120px;
+}
+
+.chain-links {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface2);
+  border-top: 1px solid var(--line);
+}
+
+/* ── 画像オブジェクト ── */
+.img-fill {
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
+.img-ghost {
+  position: absolute;
+  opacity: 0.45;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.img-ghost img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ── 画像プロパティ / 文書プロパティ ── */
+.img-props,
+.doc-props {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.img-props header,
+.doc-props header {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface2);
+}
+
+.img-props-grid,
+.doc-props-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  color: var(--text);
+}
+
+.img-props-grid label,
+.doc-props-grid label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.img-props-grid input[type='number'],
+.doc-props-grid input[type='number'],
+.doc-props-grid select {
+  width: 90px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.doc-props-grid .col-alpha {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.doc-props-grid .col-alpha input[type='number'] {
+  width: 54px;
+}
+
+.doc-props-grid button {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.img-lock {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0 10px;
+  color: var(--text);
+}
+
+.img-props .hint,
+.doc-props .hint {
+  padding: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── 画像取り込みダイアログ ── */
+.dlg-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dlg {
+  background: var(--surface);
+  color: var(--text);
+  padding: 16px;
+  border-radius: 8px;
+  width: 320px;
+}
+
+.dlg .img-prev {
+  max-width: 100%;
+  max-height: 180px;
+  display: block;
+  margin: 0 auto 10px;
+}
+
+.dlg .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+  font-size: 13px;
+}
+
+.dlg input[type='number'] {
+  width: 64px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.dlg .btns {
+  text-align: right;
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.dlg .btns button {
+  padding: 4px 14px;
+  cursor: pointer;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+/* ── 右クリックメニュー（Z-order） ── */
+.ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.ctx-menu {
+  position: fixed;
+  min-width: 140px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px var(--shadow);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.ctx-menu button {
+  border: none;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.ctx-menu button:hover {
+  background: var(--surface2);
+}
+
+/* ── ページナビ（フローティング） ── */
+.page-nav {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 3px 8px;
+  box-shadow: 0 2px 8px var(--shadow);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.page-nav button {
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.page-nav button:hover {
+  background: var(--surface2);
+}
+
+.page-nav .pn-cur input {
+  width: 34px;
+  font-size: 12px;
+  text-align: center;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+
+.page-nav.collapsed {
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+/* ── シェイプツール ── */
+.shape-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  cursor: crosshair;
+}
+
+.shape-preview {
+  position: absolute;
+  border: 1.5px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  pointer-events: none;
+  z-index: 8;
+}
+
+/* ── プロパティ小部品 ── */
+.mm-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.mm-grid label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.mm-grid input {
+  width: 56px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.z-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 10px;
+}
+
+.z-btns button {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sub-props {
+  border-top: 1px solid var(--line);
+  flex: none;
+}
+
+/* ── ルーラー（アクティブページ枠に沿う帯。位置は JS で指定） ── */
+.ruler-corner {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  background: var(--surface2);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  z-index: 9;
+}
+
+.ruler {
+  position: absolute;
+  z-index: 8;
+  background: var(--surface2);
+  color: var(--muted);
+  pointer-events: none;
+  overflow: hidden;
+  font-size: 9px;
+}
+
+.ruler-h {
+  height: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ruler-v {
+  width: 18px;
+  border-right: 1px solid var(--line);
+}
+
+.ruler .rt {
+  position: absolute;
+  border-color: var(--line);
+}
+
+.ruler-h .rt {
+  top: 8px;
+  bottom: 0;
+  border-left: 1px solid var(--line);
+}
+
+.ruler-h .rt.major {
+  top: 0;
+}
+
+.ruler-h .rt span {
+  position: absolute;
+  top: 0;
+  left: 3px;
+  white-space: nowrap;
+}
+
+.ruler-v .rt {
+  left: 8px;
+  right: 0;
+  border-top: 1px solid var(--line);
+}
+
+.ruler-v .rt.major {
+  left: 0;
+}
+
+.ruler-v .rt span {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  writing-mode: vertical-rl;
+  font-size: 8px;
+}
+
+.ruler .rcur {
+  position: absolute;
+  background: var(--sel);
+}
+
+.ruler-h .rcur {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.ruler-v .rcur {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+/* ── プロパティ小部品 ── */
+.ins-btn {
+  margin: 4px 10px;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ins-btn:hover {
+  background: var(--bg);
+}
+
+/* ── ステータスバー ── */
+.status {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface2);
+  border-top: 1px solid var(--line);
+}
+
+.status .hint {
+  flex: 1;
+}
+
+.status .sep {
+  flex: none;
+}
+
+/* ── 印刷展開オーバーレイ ── */
+.printout {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: auto;
+  background: #777;
+  padding: 24px 0;
+}
+
+.printout .pbar {
+  position: sticky;
+  top: 0;
+  text-align: center;
+  margin-bottom: 16px;
+  z-index: 1;
+}
+
+.printout .pbar button {
+  padding: 6px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  margin: 0 4px;
+}
+
+.ppage {
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+  margin: 0 auto 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+.parea {
+  position: absolute;
+  overflow: hidden;
+  color: #000;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
+}
+
+.pfoot {
+  position: absolute;
+  bottom: 5mm;
+  right: 10mm;
+  font-size: 10px;
+  color: #333;
+}
+
+@media print {
+  /* Chrome 既定では背景色・塗りが印刷で省略されるため、
+     色調整を強制して塗り・枠線・グリッドをそのまま出す（継承される） */
+  .printout {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  html,
+  body,
+  #root,
+  .app {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .body,
+  .status,
+  .ctx-backdrop,
+  .dlg-backdrop {
+    display: none !important;
+  }
+
+  .printout {
+    display: block !important;
+    position: static;
+    inset: auto;
+    overflow: visible;
+    background: none;
+    padding: 0;
+  }
+
+  .printout .pbar {
+    display: none !important;
+  }
+
+  .printout .ppage {
+    margin: 0;
+    box-shadow: none;
+    page-break-after: always;
+  }
+
+  /* 最終ページの改ページは余分な白紙を出力するため切る */
+  .printout .ppage:last-child {
+    page-break-after: auto;
+  }
+}

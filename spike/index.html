@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Kusuma Plava — spike: 縦書き原稿用紙・見た目と入力感</title>
+<style>
+  :root {
+    --cell: 28px;          /* 字セル = font-size */
+    --lane: 16px;          /* ルビ欄（段の両脇で分ける） */
+    --pitch: calc(var(--cell) + var(--lane));
+    --line: rgba(120, 140, 160, .55);   /* 字セル線 */
+    --lane-line: rgba(120, 140, 160, .25); /* ルビ欄線 */
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex;
+    font-family: system-ui, sans-serif; background: #3a3f4a;
+  }
+  /* ---- 左: 入力ペイン ---- */
+  #in {
+    width: 380px; min-width: 280px; display: flex; flex-direction: column;
+    background: #262932; color: #ddd; border-right: 1px solid #555;
+  }
+  #in h1 { font-size: 13px; margin: 10px 12px 4px; color: #9ab; }
+  #in .help { font-size: 11px; margin: 0 12px 8px; color: #789; line-height: 1.6; }
+  #in .help code { background: #333a45; padding: 0 3px; border-radius: 3px; }
+  #src {
+    flex: 1; margin: 0 12px 10px; padding: 8px; resize: none;
+    background: #1c1f26; color: #eee; border: 1px solid #444;
+    font: 15px/1.8 "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  }
+  #ctl { display: flex; gap: 14px; padding: 0 12px 12px; font-size: 12px; color: #9ab; align-items: center; }
+  #ctl label { display: flex; gap: 5px; align-items: center; }
+  /* ---- 右: 原稿用紙 ---- */
+  #out { flex: 1; overflow: auto; display: flex; }
+  #paper {
+    flex: 1; margin: 16px; padding: 18mm 14mm;
+    background: #fdfdf8;
+    box-shadow: 0 2px 18px rgba(0,0,0,.4);
+  }
+  #body {
+    writing-mode: vertical-rl;
+    height: 100%; width: 100%;
+    font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-size: var(--cell);
+    line-height: var(--pitch);
+    letter-spacing: 0;
+    /* 全角幅を強制して1字=1セルの進行を保証（プロポーショナル和文対策） */
+    font-variant-east-asian: full-width;
+    text-align: start;
+    /* 升目: 縦線=字セル両端・段境界は右寄せ、横線=字セル高さ */
+    background-image:
+      repeating-linear-gradient(to left,
+        var(--lane-line) 0, var(--lane-line) 1px,
+        transparent 1px, transparent calc(var(--lane) / 2),
+        var(--line) calc(var(--lane) / 2), var(--line) calc(var(--lane) / 2 + 1px),
+        transparent calc(var(--lane) / 2 + 1px), transparent var(--pitch)),
+      repeating-linear-gradient(to bottom,
+        var(--line) 0, var(--line) 1px,
+        transparent 1px, transparent var(--cell));
+    background-position: top right;
+  }
+  #body.nogrid { background: none; }
+  #body rt {
+    font-size: 52%;
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    color: #445;
+  }
+  /* 縦中横: 半角英数の連続を1字分の枡に横組みで収める */
+  #body .tcy {
+    text-combine-upright: all;
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  }
+  #body b { font-weight: inherit; }
+</style>
+</head>
+<body>
+  <div id="in">
+    <h1>執筆（横書き入力）</h1>
+    <p class="help">
+      <code>漢字《かんじ》</code> … 直前の漢字にルビ<br>
+      <code>｜フレーズ《よみ》</code> … 範囲明示ルビ<br>
+      <code>運命(-さだめ-)</code> … 糖衣（《》に正規化）<br>
+      <code>[-フレーズ-] (-よみ-)</code> … 糖衣・範囲明示
+    </p>
+    <textarea id="src" spellcheck="false"></textarea>
+    <div id="ctl">
+      <label>字サイズ <input id="fs" type="range" min="18" max="40" value="28"> <span id="fsv">28</span>px</label>
+      <label><input id="grid" type="checkbox" checked> 升目</label>
+      <label><input id="tcyon" type="checkbox" checked> 縦中横</label>
+    </div>
+  </div>
+  <div id="out">
+    <div id="paper"><div id="body"></div></div>
+  </div>
+<script>
+const KANJI = '[\\u4E00-\\u9FFF\\u3005\\u3006\\u30F6\\uF900-\\uFAFF]';
+const YOMI  = '[^《》\\n\\-]{1,50}';
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function render(src) {
+  let t = esc(src);
+  // 半角英数・記号の連続を縦中横（エンティティ内を除く）。
+  // ※ルビ挿入より先に行う: 後だと <rt> 等のタグ名を壊す
+  if (document.getElementById('tcyon').checked) {
+    t = t.replace(/(?<![&A-Za-z0-9])[A-Za-z0-9][A-Za-z0-9\-+._#%\/]*/g,
+                  '<span class="tcy">$&</span>');
+  }
+  // 糖衣: 明示 [-親字-] (-ヨミ-)
+  t = t.replace(new RegExp('\\[-([^\\[\\]-]{1,40})-\\] ?\\(-(' + YOMI + ')-\\)', 'g'),
+                '<ruby>$1<rt>$2</rt></ruby>');
+  // 糖衣: 暗黙 漢字(-ヨミ-)
+  t = t.replace(new RegExp('(' + KANJI + '+)\\(-(' + YOMI + ')-\\)', 'g'),
+                '<ruby>$1<rt>$2</rt></ruby>');
+  // 正規: 明示 ｜親字《ヨミ》
+  t = t.replace(/｜([^\n《》]{1,40})《([^《》\n]{1,50})》/g,
+                '<ruby>$1<rt>$2</rt></ruby>');
+  // 正規: 暗黙 漢字《ヨミ》
+  t = t.replace(new RegExp('(' + KANJI + '+)《([^《》\\n]{1,50})》', 'g'),
+                '<ruby>$1<rt>$2</rt></ruby>');
+  return t.replace(/\n/g, '<br>');
+}
+const src = document.getElementById('src');
+const body = document.getElementById('body');
+src.value = `この少年的な謎の生き物は、誰かの意思によって操られているとしか思えない。
+
+｜少年的な謎の生き物《フラクトギャルソン》は、窓の外を静かに見つめていた。
+運命《さだめ》と[-未来-] (-みらい-) を信じるなら、
+漢字(-かんじ-)も交じる。雨は止《や》まない。`;
+src.addEventListener('input', () => { body.innerHTML = render(src.value); });
+document.getElementById('fs').addEventListener('input', e => {
+  document.documentElement.style.setProperty('--cell', e.target.value + 'px');
+  document.getElementById('fsv').textContent = e.target.value;
+});
+document.getElementById('grid').addEventListener('change', e => {
+  body.classList.toggle('nogrid', !e.target.checked);
+});
+document.getElementById('tcyon').addEventListener('change',
+  () => { body.innerHTML = render(src.value); });
+body.innerHTML = render(src.value);
+</script>
+</body>
+</html>

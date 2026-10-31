@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Kusuma Plava — spike: 回しこみ（inimbal 縦版 fit）</title>
+<style>
+  :root {
+    --cell: 28px;
+    --lane: 16px;
+    --pitch: calc(var(--cell) + var(--lane));
+    --line: rgba(120, 140, 160, .55);
+    --lane-line: rgba(120, 140, 160, .25);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex;
+    font-family: system-ui, sans-serif; background: #3a3f4a;
+  }
+  #in {
+    width: 340px; min-width: 260px; display: flex; flex-direction: column;
+    background: #262932; color: #ddd; border-right: 1px solid #555;
+  }
+  #in h1 { font-size: 13px; margin: 10px 12px 4px; color: #9ab; }
+  #in .help { font-size: 11px; margin: 0 12px 8px; color: #789; line-height: 1.6; }
+  #in .help code { background: #333a45; padding: 0 3px; border-radius: 3px; }
+  #src {
+    flex: 1; margin: 0 12px 10px; padding: 8px; resize: none;
+    background: #1c1f26; color: #eee; border: 1px solid #444;
+    font: 14px/1.8 "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  }
+  #ctl { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 12px 12px; font-size: 12px; color: #9ab; }
+  #ctl label { display: flex; gap: 4px; align-items: center; }
+  #overflow { padding: 0 12px 10px; color: #f88; font-size: 12px; }
+  #out { flex: 1; overflow: auto; display: flex; }
+  #paper {
+    flex: 1; margin: 16px; padding: 18mm 14mm;
+    background: #fdfdf8;
+    box-shadow: 0 2px 18px rgba(0,0,0,.4);
+  }
+  #stage {
+    position: relative; height: 100%; width: 100%; overflow: hidden;
+    background-image:
+      repeating-linear-gradient(to left,
+        var(--lane-line) 0, var(--lane-line) 1px,
+        transparent 1px, transparent calc(var(--lane) / 2),
+        var(--line) calc(var(--lane) / 2), var(--line) calc(var(--lane) / 2 + 1px),
+        transparent calc(var(--lane) / 2 + 1px), transparent var(--pitch)),
+      repeating-linear-gradient(to bottom,
+        var(--line) 0, var(--line) 1px,
+        transparent 1px, transparent var(--cell));
+    background-position: top right;
+  }
+  #stage.nogrid { background: none; }
+  .col {
+    position: absolute;
+    writing-mode: vertical-rl;
+    font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-size: var(--cell);
+    line-height: var(--pitch);
+    font-variant-east-asian: full-width;
+    overflow: hidden;
+  }
+  .col rt {
+    font-size: 52%;
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    color: #445;
+  }
+  .col .tcy {
+    text-combine-upright: all;
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  }
+  /* 回転半角を強制1em進行（=1セル）にする */
+  .col .rc {
+    display: inline-block;
+    inline-size: var(--cell);
+    text-align: center;
+  }
+  #obst {
+    position: absolute; z-index: 5; cursor: move;
+    background: rgba(200, 90, 90, .12);
+    border: 1.5px dashed rgba(180, 70, 70, .75);
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(160, 60, 60, .8); font-size: 12px;
+    user-select: none; touch-action: none;
+  }
+</style>
+</head>
+<body>
+  <div id="in">
+    <h1>執筆（横書き入力）— 回しこみスパイク</h1>
+    <p class="help">
+      赤い矩形をドラッグして動かす。<br>
+      段内分割OFF=段はよけ側の長い方だけ使う<br>
+      <code>｜親字《ヨミ》</code> <code>漢字《かんじ》</code><br>
+      <code>(-ヨミ-)</code> <code>[-親字-] (-ヨミ-)</code> 糖衣
+    </p>
+    <textarea id="src" spellcheck="false"></textarea>
+    <div id="ctl">
+      <label>字 <input id="fs" type="range" min="20" max="36" value="28"> <span id="fsv">28</span></label>
+      <label><input id="grid" type="checkbox" checked> 升目</label>
+      <label><input id="split" type="checkbox"> 段内分割</label>
+      <label><input id="tcyon" type="checkbox" checked> 縦中横</label>
+    </div>
+    <div id="overflow"></div>
+  </div>
+  <div id="out">
+    <div id="paper">
+      <div id="stage"><div id="obst">障害物</div></div>
+    </div>
+  </div>
+<script>
+const KANJI = '[\\u4E00-\\u9FFF\\u3005\\u3006\\u30F6\\uF900-\\uFAFF]';
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+const src = document.getElementById('src');
+const stage = document.getElementById('stage');
+const obst = document.getElementById('obst');
+const ovf = document.getElementById('overflow');
+
+// 単位列化: 1単位 = 1字 = 1セル。ruby は親字数分のセルを持つ不可分単位
+function tokenize(s) {
+  const u = [];
+  let i = 0;
+  const tcyOn = document.getElementById('tcyon').checked;
+  while (i < s.length) {
+    const rest = s.slice(i);
+    let m;
+    if (m = rest.match(/^\[-([^\[\]-]{1,40})-\] ?\(-([^\n-]{1,50})-\)/)) {
+      u.push({ h: `<ruby>${esc(m[1])}<rt>${esc(m[2])}</rt></ruby>`, c: m[1].length, ns: 1 });
+    } else if (m = rest.match(new RegExp('^(' + KANJI + '+)\\(-([^\\n-]{1,50})-\\)'))) {
+      u.push({ h: `<ruby>${m[1]}<rt>${m[2]}</rt></ruby>`, c: m[1].length, ns: 1 });
+    } else if (m = rest.match(/^｜([^\n《》]{1,40})《([^《》\n]{1,50})》/)) {
+      u.push({ h: `<ruby>${esc(m[1])}<rt>${esc(m[2])}</rt></ruby>`, c: m[1].length, ns: 1 });
+    } else if (m = rest.match(new RegExp('^(' + KANJI + '+)《([^《》\\n]{1,50})》'))) {
+      u.push({ h: `<ruby>${m[1]}<rt>${m[2]}</rt></ruby>`, c: m[1].length, ns: 1 });
+    } else if (tcyOn && (m = rest.match(/^[A-Za-z0-9][A-Za-z0-9\-+._#%\/]*/))) {
+      if (m[0].length <= 4) {
+        u.push({ h: `<span class="tcy">${esc(m[0])}</span>`, c: 1 });
+      } else {
+        for (const ch of m[0]) u.push({ h: `<span class="rc">${esc(ch)}</span>`, c: 1 });
+      }
+    } else if (s[i] === '\n') {
+      u.push({ br: 1 });
+    } else if (/[A-Za-z0-9\-+._#%\/]/.test(s[i])) {
+      u.push({ h: `<span class="rc">${esc(s[i])}</span>`, c: 1 });
+    } else {
+      u.push({ h: esc(s[i]), c: 1 });
+    }
+    i += m ? m[0].length : 1;
+  }
+  return u;
+}
+
+// 障害物（stage 内座標）
+const o = { x: 0.30, y: 0.22, w: 150, h: 150 };
+function placeObst() {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  obst.style.left = (o.x * W) + 'px';
+  obst.style.top = (o.y * H) + 'px';
+  obst.style.width = o.w + 'px';
+  obst.style.height = o.h + 'px';
+}
+
+function layout() {
+  stage.querySelectorAll('.col').forEach(e => e.remove());
+  const units = tokenize(src.value);
+  const H = stage.clientHeight, W = stage.clientWidth;
+  const cell = parseFloat(getComputedStyle(document.documentElement)
+    .getPropertyValue('--cell'));
+  const P = cell + parseFloat(getComputedStyle(document.documentElement)
+    .getPropertyValue('--lane'));
+  const ob = { x: o.x * W, y: o.y * H, w: o.w, h: o.h };
+  const split = document.getElementById('split').checked;
+  let u = 0;
+  for (let col = 0; u < units.length; col++) {
+    const xR = W - col * P, xL = xR - P;
+    if (xL < 0) break;
+    let segs = [{ y: 0, h: H }];
+    if (ob.x < xR && ob.x + ob.w > xL) {
+      segs = [];
+      const topEnd = Math.floor(ob.y / cell) * cell;
+      const botStart = Math.ceil((ob.y + ob.h) / cell) * cell;
+      if (topEnd > 0) segs.push({ y: 0, h: topEnd });
+      if (H - botStart > 0) segs.push({ y: botStart, h: H - botStart });
+      if (!split && segs.length > 1)
+        segs = [segs.reduce((a, b) => a.h >= b.h ? a : b)];
+      if (!segs.length) continue;
+    }
+    let brk = false;
+    for (const s of segs) {
+      const div = document.createElement('div');
+      div.className = 'col';
+      div.style.right = (W - xR) + 'px';
+      div.style.top = s.y + 'px';
+      div.style.height = s.h + 'px';
+      div.style.width = P + 'px';
+      let html = '', used = 0;
+      const cap = Math.floor(s.h / cell);
+      while (u < units.length) {
+        const t = units[u];
+        if (t.br) { u++; brk = true; break; }
+        if (t.c > cap - used) {
+          if (used === 0) { html += t.h; u++; } // どこにも入らない単位は強制配置
+          break;
+        }
+        html += t.h; used += t.c; u++;
+      }
+      div.innerHTML = html;
+      stage.appendChild(div);
+      if (u >= units.length || brk) break;
+    }
+  }
+  ovf.textContent = u < units.length ? `あふれ: ${units.length - u} 単位` : '';
+}
+
+// ドラッグ
+obst.addEventListener('pointerdown', e => {
+  obst.setPointerCapture(e.pointerId);
+  const sx = e.clientX - obst.offsetLeft, sy = e.clientY - obst.offsetTop;
+  const move = ev => {
+    const W = stage.clientWidth, H = stage.clientHeight;
+    o.x = Math.min(Math.max((ev.clientX - sx) / W, 0), 1 - o.w / W);
+    o.y = Math.min(Math.max((ev.clientY - sy) / H, 0), 1 - o.h / H);
+    placeObst(); layout();
+  };
+  const up = () => {
+    obst.removeEventListener('pointermove', move);
+    obst.removeEventListener('pointerup', up);
+  };
+  obst.addEventListener('pointermove', move);
+  obst.addEventListener('pointerup', up);
+});
+
+src.value = `この少年的な謎の生き物は、誰かの意思によって操られているとしか思えない。
+
+｜少年的な謎の生き物《フラクトギャルソン》は、窓の外を静かに見つめていた。運命《さだめ》と未来《みらい》を信じるなら、漢字《かんじ》も交じる。雨は止《や》まない。
+
+私はあれから何時間、窓の外を見ていたのだろうか。さっきまで明るかった空はいつのまにか藍色にかわっていた。
+思い出したようにFMR-Noteの電源を入れると、この後の予定を確認するために、OASYSを立ち上げた。`;
+src.addEventListener('input', layout);
+document.getElementById('fs').addEventListener('input', e => {
+  document.documentElement.style.setProperty('--cell', e.target.value + 'px');
+  document.getElementById('fsv').textContent = e.target.value;
+  layout();
+});
+document.getElementById('grid').addEventListener('change', e => {
+  stage.classList.toggle('nogrid', !e.target.checked);
+});
+document.getElementById('split').addEventListener('change', layout);
+document.getElementById('tcyon').addEventListener('change', layout);
+new ResizeObserver(() => { placeObst(); layout(); }).observe(stage);
+placeObst(); layout();
+</script>
+</body>
+</html>

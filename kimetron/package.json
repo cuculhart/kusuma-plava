@@ -1,0 +1,27 @@
+{
+  "name": "kimetron",
+  "private": true,
+  "version": "1.6.1",
+  "license": "MIT",
+  "description": "World-coordinate canvas engine — position is data.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cuculhart/kimetron.git"
+  },
+  "homepage": "https://cuculhart.github.io/kimetron/",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "drivers"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w kimetron-drivers",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.4"
+  }
+}
