@@ -508,14 +508,15 @@ export function ChainPane({
             }
           }}
         />
+        </>
+        )}
+        {/* 書式解除は執筆モードでも必要 — B/I/U を戻せないと詰む */}
         <button
           disabled={!hasSel}
           onClick={() => onClearMarks(sel.s, sel.e)}
         >
           {t('chain.markClear')}
         </button>
-        </>
-        )}
       </div>
       {areaData && (
         <div className="chain-font">
