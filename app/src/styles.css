@@ -422,6 +422,26 @@ body,
   text-align: center;
 }
 
+/* 通常字の強制1セル進行 — .rc と同じ仕組みを全ての縦組み字へ適用。
+   UDデジタル教科書体など縦送り量（vmtx/vhea）が1emを超える書体でも
+   1字が必ず1升に収まり、fitVertical の単位計測と描画が一致する。
+   text-align:center でセル内の上下位置は重心寄せ（はみ出し分を両側へ） */
+.ta-slice.vt .vc,
+.parea.vt .vc {
+  display: inline-block;
+  inline-size: 1em;
+  text-align: center;
+}
+
+/* ルビ単位 — 進行を親字数ぶんに固定（inline-size は vtrender が
+   em×親字数で inline 指定）。長いヨミはルビ欄・上下へ張り出してよいが
+   進行方向へは隣の単位を押し出さない */
+.ta-slice.vt .vr,
+.parea.vt .vr {
+  display: inline-block;
+  text-align: center;
+}
+
 .oflabel {
   position: absolute;
   right: 2px;
