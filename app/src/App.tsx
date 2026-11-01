@@ -407,7 +407,7 @@ export function App() {
   // 用紙の透過 — 既定 75%（新規文書・初期起動）。書庫・下書き・
   // 履歴スナップには値ごと保存されるため復元時は保存値が優先される
   const [pageOpacity, setPageOpacity] = useState(75);
-  const [footer, setFooter] = useState(true);
+  const [footer, setFooter] = useState(false);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activePage, setActivePage] = useState(0);
   const [shapeTool, setShapeTool] = useState<ShapeTool | null>(null);
@@ -995,7 +995,7 @@ export function App() {
           pages: initDoc.model.pages,
           objects: initDoc.objects,
           chains: initDoc.chains,
-          footer: true,
+          footer: false,
           title: '',
           pageOpacity: 75,
           docFont: DEFAULT_FONT_FAMILY,
@@ -1147,7 +1147,7 @@ export function App() {
     commitPages(d.model, uncanon(d.objects, d.model.spec));
     setChains(d.chains);
     setWriteChainId(null);
-    setFooter(true);
+    setFooter(false);
     setDocTitle('');
     setPageOpacity(75);
     setDocFont(DEFAULT_FONT_FAMILY);
