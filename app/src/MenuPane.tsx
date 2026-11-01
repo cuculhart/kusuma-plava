@@ -170,11 +170,17 @@ export function MenuPane({
         </>
       )}
       <div className="m-sep" />
-      {item('頁', t('menu.addPage'), onAddPage, { enIc: 'P' })}
-      {item('消', t('menu.delPage'), onDeletePage, {
-        title: t('menu.delPageTip'),
-        enIc: 'D',
-      })}
+      {/* v0.9: ページの追加・削除は執筆モードでは自動管理 —
+          あふれで自動追加、末尾の空の自動ページは自動削除 */}
+      {!writeMode && (
+        <>
+          {item('頁', t('menu.addPage'), onAddPage, { enIc: 'P' })}
+          {item('消', t('menu.delPage'), onDeletePage, {
+            title: t('menu.delPageTip'),
+            enIc: 'D',
+          })}
+        </>
+      )}
       {item('印', t('menu.print'), onPrint, { enIc: '⎙' })}
       <div className="m-sep" />
       {collapsed ? (

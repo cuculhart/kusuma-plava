@@ -825,7 +825,36 @@ export function App() {
     }
     commitPages(next, content);
   };
-  const removePage = (id: string) => commitPages(deletePage(model, id));
+  const removePage = (id: string) => {
+    // v0.9: ページ上のコンテンツオブジェクトも一緒に消し、
+    // 連鎖からも外す — 残ると消えたページのエリアが連鎖に
+    // 残ってテキストが末尾へ「あふれ」扱いになる
+    const ax = curAxis();
+    const pr = pageRects(model.spec, model.pages, ax).find(
+      (r) => r.id === id,
+    );
+    const inside = new Set<string>();
+    const objs = engine.doc.objects.filter((o) => {
+      if (o.kind === PAGE_KIND || !pr) return true;
+      const cx = o.x + o.w / 2;
+      const cy = o.y + o.h / 2;
+      const hit =
+        cx >= pr.x &&
+        cx < pr.x + pr.w &&
+        cy >= pr.y &&
+        cy < pr.y + pr.h;
+      if (hit) inside.add(o.id);
+      return !hit;
+    });
+    if (inside.size)
+      setChains((cs) =>
+        cs.map((c) => ({
+          ...c,
+          areas: c.areas.filter((a) => !inside.has(a)),
+        })),
+      );
+    commitPages(deletePage(model, id), objs);
+  };
   const insertAt = (index: number) => {
     const ax = curAxis();
     const res = insertPage(model, index, undefined, ax);
@@ -1879,6 +1908,43 @@ export function App() {
   const writeArea = dockChain
     ? (objById.get(dockChain.areas[0]) ?? null)
     : null;
+
+  // ── v0.9: ページの自動管理（執筆モード） ──
+  // 連鎖テキストが最終枠からあふれたら自動追加、末尾ページが
+  // 「自動升目枠1枚だけ・そのスライスが空」なら自動削除する。
+  // 画像等の他オブジェクトがある末尾ページは人の配置なので残す。
+  const wcOverflow = writeChain
+    ? (layouts.get(writeChain.id)?.overflow ?? '')
+    : '';
+  const wcEmptyTail = (() => {
+    if (!writeMode || !writeChain) return null;
+    const prs = pageRects(model.spec, model.pages, curAxis());
+    if (prs.length <= 1) return null;
+    const last = prs[prs.length - 1];
+    const inside = engine.doc.objects.filter(
+      (o) =>
+        o.kind !== PAGE_KIND &&
+        o.x + o.w / 2 >= last.x &&
+        o.x + o.w / 2 < last.x + last.w &&
+        o.y + o.h / 2 >= last.y &&
+        o.y + o.h / 2 < last.y + last.h,
+    );
+    if (inside.length !== 1) return null;
+    const d = inside[0].data as TextAreaData | undefined;
+    if (!d?.genko && !d?.auto) return null;
+    const sl = layouts
+      .get(writeChain.id)
+      ?.slices.find((s) => s.areaId === inside[0].id);
+    return sl && sl.text === '' ? last.id : null;
+  })();
+  useEffect(() => {
+    if (wcOverflow.length > 0) {
+      appendPage();
+      return;
+    }
+    if (wcEmptyTail) removePage(wcEmptyTail);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wcOverflow, wcEmptyTail]);
 
   // ── ページナビ: アクティブページ（枠クリック or ナビで切替） ──
   const axis: StackAxis = writeMode ? 'x' : 'y';

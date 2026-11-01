@@ -385,11 +385,8 @@ export function Printout({
               }
               return null;
             })}
-            {footer && (
-              <div className="pfoot">
-                {pr.index + 1} / {rects.length}
-              </div>
-            )}
+            {/* v0.9: フッター頁数表記は休眠（UI非表示・既定OFF） —
+                残存値で残る旧書庫のゴースト表示を出さないため撤去 */}
             {/* v0.3: ページ番号（ノンブル）— 版面下端中央、1 始まり */}
             {pageNum && <div className="pnum">{pr.index + 1}</div>}
             {/* v0.7: 柱 — 天余白・升目枠右辺揃えの縦書き（枠の上辺まで） */}
