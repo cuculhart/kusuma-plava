@@ -43,6 +43,8 @@ export function MenuPane({
   lang,
   writeMode,
   onMode,
+  spread,
+  onToggleSpread,
   t,
 }: {
   collapsed: boolean;
@@ -74,6 +76,9 @@ export function MenuPane({
   /** 執筆モード中はレイアウト系のツール項目を畳む（v0.2） */
   writeMode: boolean;
   onMode: () => void;
+  /** v0.6: 見開き表示（組版モードのみ） */
+  spread: boolean;
+  onToggleSpread: () => void;
   t: TFunc;
 }) {
   const item = (
@@ -144,6 +149,11 @@ export function MenuPane({
       {!writeMode && (
         <>
           <div className="m-sep" />
+          {item('見', t('menu.spread'), onToggleSpread, {
+            on: spread,
+            title: t('menu.spreadTip'),
+            enIc: 'S',
+          })}
           {item('鎖', t('menu.link'), onLinkMode, {
             on: linkMode,
             title: t('menu.linkTip'),

@@ -480,6 +480,9 @@ export function App() {
   const [writeMode, setWriteMode] = useState(
     () => localStorage.getItem('kusuma-mode') !== 'layout',
   );
+  // v0.6: 見開き表示 — 組版モードでのみ有効な第3の積み軸。
+  // 偶数スロット=左・奇数=右（右綴じ）、slot0 は右単独
+  const [spread, setSpread] = useState(false);
   // 執筆モードでの連鎖選択（キャンバス選択とは独立）
   const [writeChainId, setWriteChainId] = useState<string | null>(null);
   // 字下げ — Enter 入力時に段落頭の全角スペースを自動挿入（既定ON）
@@ -571,6 +574,8 @@ export function App() {
   linkModeRef.current = linkMode;
   const writeModeRef = useRef(writeMode);
   writeModeRef.current = writeMode;
+  const spreadRef = useRef(spread);
+  spreadRef.current = spread;
   const placingRef = useRef(placing);
   placingRef.current = placing;
   const measurerRef = useRef(createCanvasMeasurer());
@@ -581,7 +586,8 @@ export function App() {
   // モード切替時に remapAxis で全オブジェクトを載せ替える。
   // 書庫・履歴スナップ・下書き・印刷展開は常に正準系 'y' — 境界で
   // canon/uncanon が変換する（往復変換は紙面上のオブジェクトで厳密）。
-  const curAxis = (): StackAxis => (writeModeRef.current ? 'x' : 'y');
+  const curAxis = (): StackAxis =>
+    writeModeRef.current ? 'x' : spreadRef.current ? 'spread' : 'y';
   const remapAxis = (
     objects: WorldObject[],
     from: StackAxis,
@@ -1898,6 +1904,23 @@ export function App() {
       engine.setSelection([]);
     }
   };
+  // v0.6: 見開き表示トグル（組版モードのみ）— 世界座標を
+  // 'y'⇄'spread' で載せ替える（右綴じ: 奇数=右・偶数=左）
+  const onToggleSpread = () => {
+    const next = !spreadRef.current;
+    setSpread(next);
+    spreadRef.current = next;
+    commitPages(
+      model,
+      remapAxis(
+        contentObjects(),
+        next ? 'y' : 'spread',
+        next ? 'spread' : 'y',
+        model.spec,
+      ),
+    );
+    focusPage(curPage);
+  };
   const onIndent = (v: boolean) => {
     setIndent(v);
     localStorage.setItem('kusuma-indent', v ? '1' : '0');
@@ -2719,6 +2742,8 @@ export function App() {
           lang={lang}
           writeMode={writeMode}
           onMode={onToggleMode}
+          spread={spread}
+          onToggleSpread={onToggleSpread}
           t={t}
         />
         <div

@@ -23,7 +23,7 @@ export type PaperSize =
   | 'SHIROKU';
 
 /** ページの積み方向。'y'=縦積み（下へ）、'x'=横積み（右→左、page0 が最右） */
-export type StackAxis = 'y' | 'x';
+export type StackAxis = 'y' | 'x' | 'spread';
 
 export interface PaperSpec {
   size: PaperSize;
@@ -60,7 +60,7 @@ export function pagePitch(spec: PaperSpec): number {
     'y' = 用紙高さ+段間（下へ）、'x' = 用紙幅+段間（左へ）。 */
 export function pagePitchAlong(spec: PaperSpec, axis: StackAxis): number {
   const d = paperDims(spec);
-  return (axis === 'y' ? d.h : d.w) + PAGE_GAP_MM;
+  return (axis === 'y' || axis === 'spread' ? d.h : d.w) + PAGE_GAP_MM;
 }
 
 /**
@@ -97,6 +97,20 @@ export function pageRectAt(
     return {
       x: PAGE_ORIGIN_X - slot * pagePitchAlong(spec, 'x'),
       y: PAGE_ORIGIN_Y,
+      w,
+      h,
+    };
+  }
+  if (axis === 'spread') {
+    // 見開き（右綴じ）— slot0(p.1) は右列に単独、以降は
+    // 偶数スロット=左・奇数スロット=右の対で下へ並ぶ
+    const row = (slot + 1) >> 1;
+    return {
+      x:
+        slot % 2 === 0
+          ? PAGE_ORIGIN_X + w + PAGE_GAP_MM
+          : PAGE_ORIGIN_X,
+      y: PAGE_ORIGIN_Y + row * pagePitchAlong(spec, 'y'),
       w,
       h,
     };
@@ -279,23 +293,32 @@ export function remapRectAxis(
   const ph = pagePitchAlong(spec, 'x');
   const cx = r.x + r.w / 2;
   const cy = r.y + r.h / 2;
+  // 分解: (slot, 紙面ローカル lx/ly) — いずれの軸でも紙面上は厳密
+  let s: number;
+  let lx: number;
+  let ly: number;
   if (from === 'y') {
-    const s = Math.floor((cy - PAGE_ORIGIN_Y) / pv);
-    const lx = cx - PAGE_ORIGIN_X;
-    const ly = cy - PAGE_ORIGIN_Y - s * pv;
-    return {
-      x: PAGE_ORIGIN_X - s * ph + lx - r.w / 2,
-      y: PAGE_ORIGIN_Y + ly - r.h / 2,
-      w: r.w,
-      h: r.h,
-    };
+    s = Math.floor((cy - PAGE_ORIGIN_Y) / pv);
+    lx = cx - PAGE_ORIGIN_X;
+    ly = cy - PAGE_ORIGIN_Y - s * pv;
+  } else if (from === 'x') {
+    s = Math.floor((PAGE_ORIGIN_X + W - cx) / ph);
+    lx = cx - (PAGE_ORIGIN_X - s * ph);
+    ly = cy - PAGE_ORIGIN_Y;
+  } else {
+    // spread — 行→列で slot を引く。row0 は slot0 だけなので
+    // 列判定に関わらず slot0 へ畳む
+    const row = Math.max(0, Math.floor((cy - PAGE_ORIGIN_Y) / pv));
+    const right = cx >= PAGE_ORIGIN_X + W + PAGE_GAP_MM / 2;
+    s = row === 0 ? 0 : right ? 2 * row : 2 * row - 1;
+    const pr = pageRectAt(spec, s, 'spread');
+    lx = cx - pr.x;
+    ly = cy - pr.y;
   }
-  const s = Math.floor((PAGE_ORIGIN_X + W - cx) / ph);
-  const lx = cx - (PAGE_ORIGIN_X - s * ph);
-  const ly = cy - PAGE_ORIGIN_Y;
+  const t = pageRectAt(spec, s, to);
   return {
-    x: PAGE_ORIGIN_X + lx - r.w / 2,
-    y: PAGE_ORIGIN_Y + s * pv + ly - r.h / 2,
+    x: t.x + lx - r.w / 2,
+    y: t.y + ly - r.h / 2,
     w: r.w,
     h: r.h,
   };
