@@ -9,7 +9,7 @@ import type { TFunc } from './i18n';
 import { tf } from './i18n';
 import type { TextAreaData } from './types';
 import { DEFAULT_TEXT_DATA, FONT_SIZES_MM } from './types';
-import { fontOptions, useSysFonts } from './useSysFonts';
+import { FontPick } from './FontPick';
 
 export function ChainPane({
   chain,
@@ -58,7 +58,7 @@ export function ChainPane({
   // 選択範囲はボタン押下でフォーカスが外れても保持するため state で記憶
   const [sel, setSel] = useState<{ s: number; e: number }>({ s: 0, e: 0 });
   const [markColor, setMarkColor] = useState('#222222');
-  const sysFonts = useSysFonts();
+
 
   // 選択開始位置の実効色（マーク後勝ち → エリア既定へフォールバック）
   const colorAt = (pos: number) => {
@@ -82,8 +82,7 @@ export function ChainPane({
   const hasSel = sel.e > sel.s;
   const apply = (attrs: Partial<TextAttrs>) =>
     hasSel && onApplyMark(sel.s, sel.e, attrs);
-  // 既定3種 + インストール済みフォント（queryLocalFonts が取れた場合）
-  const fonts = fontOptions(sysFonts);
+
 
   // ── v0.2 執筆補助 ──
   // 字下げ・話区切りで差し込んだ文字の後へキャレットを戻すための退避
@@ -482,23 +481,17 @@ export function ChainPane({
             </option>
           ))}
         </select>
-        <select
+        <span
           className="chain-marks-font"
-          disabled={!hasSel}
-          value=""
-          title={t('chain.markFont')}
-          onChange={(e) => {
-            if (e.currentTarget.value)
-              apply({ fontFamily: e.currentTarget.value });
-          }}
+          style={{ pointerEvents: hasSel ? undefined : 'none', opacity: hasSel ? 1 : 0.5 }}
         >
-          <option value="">{t('chain.markFont')}</option>
-          {fonts.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
+          <FontPick
+            value=""
+            onPick={(s) => apply({ fontFamily: s })}
+            t={t}
+            placeholder={t('chain.markFont')}
+          />
+        </span>
         <input
           className="chain-marks-link"
           type="url"
@@ -532,21 +525,11 @@ export function ChainPane({
           {!writeMode && (
           <label>
             {t('chain.font')}
-            <select
-              className="chain-font-family"
+            <FontPick
               value={areaData.fontFamily}
-              onChange={(e) =>
-                onAreaData({ fontFamily: e.currentTarget.value })
-              }
-            >
-              {[...new Set([areaData.fontFamily, ...fonts])].map(
-                (f) => (
-                  <option key={f} value={f}>
-                    {f}
-                  </option>
-                ),
-              )}
-            </select>
+              onPick={(s) => onAreaData({ fontFamily: s })}
+              t={t}
+            />
           </label>
           )}
           {/* 字サイズは文書設定の升目仕様（縦×横）が自動決定するため
