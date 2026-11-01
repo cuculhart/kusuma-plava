@@ -3407,31 +3407,20 @@ export function App() {
           readText().then((text) => {
             const target = writeChain ?? chains[0];
             if (!target) return void setBusy(null);
-            // 一括流し込みは UI スレッドを長く塞ぎ「ページが
-            // 応答しません」になる — 行単位で分割して段階的に
-            // 流し込み、チャンク間で描画を入れて進行率を出す
-            const lines = text.split('\n');
-            const STEP = 300; // 行/回 — 1回あたり数秒で収まる量
-            const total = lines.length;
-            let pos = 0;
-            const pour = () => {
-              pos = Math.min(pos + STEP, total);
-              const part = lines.slice(0, pos).join('\n');
-              setChains((cs) =>
-                cs.map((c) =>
-                  c.id === target.id ? { ...c, text: part } : c,
-                ),
-              );
-              setBusy(
-                `${t('hint.importing')} ${Math.round((pos / total) * 100)}%`,
-              );
-              if (pos < total) setTimeout(pour, 0);
-              else {
+            // 一括設定 — 分割流し込みはチャンク毎に全文書の
+            // あふれ計算が走り逆に遅い。ページ追加は自動管理
+            // が別タスクで段階的にやってくれる
+            requestAnimationFrame(() =>
+              setTimeout(() => {
+                setChains((cs) =>
+                  cs.map((c) =>
+                    c.id === target.id ? { ...c, text } : c,
+                  ),
+                );
                 setBusy(null);
                 flash(tf(t, 'hint.imported', f.name));
-              }
-            };
-            requestAnimationFrame(() => setTimeout(pour, 30));
+              }, 30),
+            );
           });
         }}
       />
