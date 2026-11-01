@@ -249,7 +249,21 @@ export function unpackArchive(bytes: Uint8Array): {
       doc.genko.cells <= 100 &&
       doc.genko.cols >= 1 &&
       doc.genko.cols <= 100
-        ? { cells: doc.genko.cells, cols: doc.genko.cols }
+        ? {
+            cells: doc.genko.cells,
+            cols: doc.genko.cols,
+            // v0.6: 段数1〜3・段間mm — 欠落・不正は既定(1段/7mm)へ
+            ...(Number.isInteger(doc.genko.columns ?? 0) &&
+            (doc.genko.columns ?? 0) >= 1 &&
+            (doc.genko.columns ?? 0) <= 3
+              ? { columns: doc.genko.columns }
+              : {}),
+            ...(typeof doc.genko.gapMm === 'number' &&
+            doc.genko.gapMm >= 0 &&
+            doc.genko.gapMm <= 40
+              ? { gapMm: doc.genko.gapMm }
+              : {}),
+          }
         : undefined,
     // v0.6: 升目線の色+濃さ — #rrggbb と 0〜1 の有限数以外は既定へ畳む
     gridColor:

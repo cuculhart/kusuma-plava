@@ -156,6 +156,8 @@ const ja = {
   'doc.genkoChars': '字',
   'doc.genkoH': '横',
   'doc.genkoRows': '行',
+  'doc.columns': '$1段',
+  'doc.gapMm': '段間',
   'doc.genkoTip':
     '1ページあたりの升目数（縦=1段の字数・横=段数、1〜100）— 升目枠と字サイズを再計算します',
   'doc.fit400': '升目枠に合わせる',
@@ -387,6 +389,8 @@ const en: Record<keyof typeof ja, string> = {
   'doc.genkoChars': 'ch',
   'doc.genkoH': 'H',
   'doc.genkoRows': 'cols',
+  'doc.columns': '$1 col',
+  'doc.gapMm': 'gap',
   'doc.genkoTip':
     'Cells per column × columns per page (1–100) — rebuilds genkōyōshi frames and font size',
   'doc.fit400': 'Fit grid frame',

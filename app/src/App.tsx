@@ -202,8 +202,45 @@ function genkoFontSize(
   margins: PageMargins = DEFAULT_MARGINS,
 ): number | null {
   const { bw, bh } = hanmenBox(spec, margins);
-  const fs = Math.min(bh / g.cells, bw / (g.cols * (1 + RUBY_LANE_RATIO)));
+  const n = g.columns ?? 1;
+  const gap = g.gapMm ?? 7;
+  const colW = (bw - (n - 1) * gap) / n;
+  const fs = Math.min(bh / g.cells, colW / (g.cols * (1 + RUBY_LANE_RATIO)));
   return Number.isFinite(fs) && fs > 0 ? fs : null;
+}
+
+/** slot ページの升目枠を段数分すべて返す（右→左の順 = col 0..n-1）。
+    版面箱を段間 gap で等分し、各段箱の中央に升目枠を寄せる */
+function genkoFrames(
+  spec: PaperSpec,
+  slot: number,
+  g: GenkoGrid,
+  axis: StackAxis = 'y',
+  margins: PageMargins = DEFAULT_MARGINS,
+): { x: number; y: number; w: number; h: number; fontSize: number; col: number }[] {
+  const fs = genkoFontSize(spec, g, margins);
+  if (fs == null) return [];
+  const p = pageRectAt(spec, slot, axis);
+  const n = Math.max(1, Math.min(3, Math.round(g.columns ?? 1)));
+  const gap = g.gapMm ?? 7;
+  const i = marginInsets(margins, slot);
+  const bw = p.w - i.l - i.r;
+  const bh = p.h - i.t - i.b;
+  const w = g.cols * fs * (1 + RUBY_LANE_RATIO) + 2 * TEXT_PAD_MM;
+  const h = g.cells * fs + 2 * TEXT_PAD_MM;
+  const colW = (bw - (n - 1) * gap) / n;
+  return Array.from({ length: n }, (_, col) => {
+    // col 0 = 右端の段 — 版面箱の右から積む（縦書きの段順）
+    const cx = p.x + i.l + bw - (col + 1) * colW - col * gap;
+    return {
+      x: cx + (colW - w) / 2,
+      y: p.y + i.t + (bh - h) / 2,
+      w,
+      h,
+      fontSize: fs,
+      col,
+    };
+  });
 }
 
 /** slot ページ上の升目枠矩形 — エリア内寸をちょうど cells×cols 升にし、
@@ -215,23 +252,10 @@ function genkoFrame(
   g: GenkoGrid,
   axis: StackAxis = 'y',
   margins: PageMargins = DEFAULT_MARGINS,
+  col = 0,
 ): { x: number; y: number; w: number; h: number; fontSize: number } | null {
-  const fs = genkoFontSize(spec, g, margins);
-  if (fs == null) return null;
-  const p = pageRectAt(spec, slot, axis);
-  const w = g.cols * fs * (1 + RUBY_LANE_RATIO) + 2 * TEXT_PAD_MM;
-  const h = g.cells * fs + 2 * TEXT_PAD_MM;
-  // 四方マージンの版面箱へ中央寄せ（ノド/小口はページ parity で反転）
-  const i = marginInsets(margins, slot);
-  const bw = p.w - i.l - i.r;
-  const bh = p.h - i.t - i.b;
-  return {
-    x: p.x + i.l + (bw - w) / 2,
-    y: p.y + i.t + (bh - h) / 2,
-    w,
-    h,
-    fontSize: fs,
-  };
+  const f = genkoFrames(spec, slot, g, axis, margins)[col];
+  return f ? { x: f.x, y: f.y, w: f.w, h: f.h, fontSize: f.fontSize } : null;
 }
 
 /** 執筆モード既定ドキュメント（v0.2）— 第1ページに縦書き
@@ -250,33 +274,36 @@ function buildWritingDoc(font: string): {
   // 現在のモード軸へ remapAxis で載せ替える（書庫・下書き比較の基準形）
   const p = pageRectAt(model.spec, 0, 'y');
   const m = HANMEN_MARGIN_MM;
-  const areaId = 'ta1';
+  // v0.6: 段数分の枠を右→左で生成（単段なら従来どおり1枚）。
   // 升目枠が組めない極端な用紙では旧来の版面ぴったりエリアへ退く
-  const f = genkoFrame(model.spec, 0, GENKO_GRID, 'y');
-  const rect = f ?? { x: p.x + m, y: p.y + m, w: p.w - 2 * m, h: p.h - 2 * m };
+  const frames = genkoFrames(model.spec, 0, GENKO_GRID, 'y');
+  const rects = frames.length
+    ? frames
+    : [{ x: p.x + m, y: p.y + m, w: p.w - 2 * m, h: p.h - 2 * m, fontSize: undefined as number | undefined, col: 0 }];
+  const areaIds = rects.map((_, i) => `ta${i + 1}`);
   return {
     model,
-    objects: [
-      {
-        id: areaId,
-        kind: TEXT_KIND,
-        ...rect,
-        style: { stroke: 'rgba(90,110,140,0.4)' },
-        // 既定は縦書き（v0.1 の新規エリア既定と同じ）
-        data: {
-          ...DEFAULT_TEXT_DATA,
-          fontFamily: font,
-          fontSize: f?.fontSize ?? DEFAULT_TEXT_DATA.fontSize,
-          writing: 'vertical-rl',
-          // 自動生成の印 — 用紙変更時の版面追従の判別材料
-          // （判定自体は版面矩形との一致で行う。refitWritingAreas 参照）
-          auto: true,
-          // 升目枠の印 — 用紙変更時は枠ごと再計算して追従する
-          ...(f ? { genko: { ...GENKO_GRID } } : {}),
-        },
+    objects: rects.map((rect, i) => ({
+      id: areaIds[i],
+      kind: TEXT_KIND,
+      ...rect,
+      style: { stroke: 'rgba(90,110,140,0.4)' },
+      // 既定は縦書き（v0.1 の新規エリア既定と同じ）
+      data: {
+        ...DEFAULT_TEXT_DATA,
+        fontFamily: font,
+        fontSize: rect.fontSize ?? DEFAULT_TEXT_DATA.fontSize,
+        writing: 'vertical-rl',
+        // 自動生成の印 — 用紙変更時の版面追従の判別材料
+        // （判定自体は版面矩形との一致で行う。refitWritingAreas 参照）
+        auto: true,
+        // 升目枠の印 — 用紙変更時は枠ごと再計算して追従する
+        ...(frames.length
+          ? { genko: { ...GENKO_GRID }, col: rects[i].col }
+          : {}),
       },
-    ],
-    chains: [{ id: 'c1', areas: [areaId], text: '' }],
+    })),
+    chains: [{ id: 'c1', areas: areaIds, text: '' }],
   };
 }
 
@@ -304,7 +331,8 @@ function refitWritingAreas(
   const prevRects = pageRects(prev.spec, prev.pages, axis);
   return objects.map((o) => {
     if (o.kind !== TEXT_KIND) return o;
-    const g = (o.data as TextAreaData | undefined)?.genko;
+    const d = o.data as TextAreaData | undefined;
+    const g = d?.genko;
     if (g) {
       // 升目枠 — 属するページを中心点で判定し、旧 spec での枠矩形と
       // 一致しているものだけ新枠へ追従（手動で動かした枠はそのまま）
@@ -314,7 +342,14 @@ function refitWritingAreas(
         (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
       );
       if (!hit) return o;
-      const pf = genkoFrame(prev.spec, hit.slot, g, axis, margins);
+      const pf = genkoFrame(
+        prev.spec,
+        hit.slot,
+        g,
+        axis,
+        margins,
+        d?.col ?? 0,
+      );
       if (
         !pf ||
         Math.abs(o.x - pf.x) > eps ||
@@ -323,7 +358,14 @@ function refitWritingAreas(
         Math.abs(o.h - pf.h) > eps
       )
         return o;
-      const f = genkoFrame(next.spec, hit.slot, g, axis, margins);
+      const f = genkoFrame(
+        next.spec,
+        hit.slot,
+        g,
+        axis,
+        margins,
+        d?.col ?? 0,
+      );
       if (!f) return o;
       return {
         ...o,
@@ -778,6 +820,35 @@ export function App() {
     });
     syncSnapExtra(engine, next, curAxis());
   };
+  // v0.6: slot ページの段組升目枠を右→左（col 0..n-1）で生成
+  const genkoAreaObjs = (
+    spec: PaperSpec,
+    slot: number,
+    g: GenkoGrid,
+    ax: StackAxis,
+    m: PageMargins,
+  ): WorldObject[] =>
+    genkoFrames(spec, slot, g, ax, m).map((f) => ({
+      id: nextId('ta'),
+      kind: TEXT_KIND,
+      x: f.x,
+      y: f.y,
+      w: f.w,
+      h: f.h,
+      style: {
+        stroke: 'rgba(90,110,140,0.4)',
+        fill: gridLineCss(gridBg, gridBgAlpha),
+      },
+      data: {
+        ...DEFAULT_TEXT_DATA,
+        fontFamily: docFont,
+        fontSize: f.fontSize,
+        writing: 'vertical-rl',
+        auto: true,
+        genko: { ...g },
+        col: f.col,
+      } satisfies TextAreaData,
+    }));
   // 用紙サイズ・向きの変更 — 版面を覆う自動生成エリアは
   // 新しい版面へ追従させる（手置きエリアは触らない。refitWritingAreas 参照）
   const applySpec = (spec: PageModel['spec']) => {
@@ -799,36 +870,25 @@ export function App() {
     // 末尾へ繋ぐ — あふれが次ページへそのまま流れる
     if (writeModeRef.current) {
       const slot = next.pages[next.pages.length - 1].slot;
-      const f = genkoFrame(next.spec, slot, genko, curAxis(), margins);
-      if (f) {
-        const id = nextId('ta');
-        content.push({
-          id,
-          kind: TEXT_KIND,
-          x: f.x,
-          y: f.y,
-          w: f.w,
-          h: f.h,
-          style: {
-            stroke: 'rgba(90,110,140,0.4)',
-            fill: gridLineCss(gridBg, gridBgAlpha),
-          },
-          data: {
-            ...DEFAULT_TEXT_DATA,
-            fontFamily: docFont,
-            fontSize: f.fontSize,
-            writing: 'vertical-rl',
-            auto: true,
-            genko: { ...genko },
-          } satisfies TextAreaData,
-        });
+      const areas = genkoAreaObjs(
+        next.spec,
+        slot,
+        genko,
+        curAxis(),
+        margins,
+      );
+      if (areas.length) {
+        content.push(...areas);
         const target =
           chainsRef.current.find((c) => c.id === writeChainId) ??
           chainsRef.current[0];
         if (target) {
+          const ids = areas.map((a) => a.id);
           setChains((cs) =>
             cs.map((c) =>
-              c.id === target.id ? { ...c, areas: [...c.areas, id] } : c,
+              c.id === target.id
+                ? { ...c, areas: [...c.areas, ...ids] }
+                : c,
             ),
           );
         }
@@ -883,29 +943,15 @@ export function App() {
     // 執筆もできない）。連鎖への接続はページ順に合わせて、
     // 以降のページ上にある最初のエリアの直前へ挿入する。
     if (writeModeRef.current) {
-      const f = genkoFrame(next.spec, res.page.slot, genko, ax, margins);
-      if (f) {
-        const id = nextId('ta');
-        content.push({
-          id,
-          kind: TEXT_KIND,
-          x: f.x,
-          y: f.y,
-          w: f.w,
-          h: f.h,
-          style: {
-            stroke: 'rgba(90,110,140,0.4)',
-            fill: gridLineCss(gridBg, gridBgAlpha),
-          },
-          data: {
-            ...DEFAULT_TEXT_DATA,
-            fontFamily: docFont,
-            fontSize: f.fontSize,
-            writing: 'vertical-rl',
-            auto: true,
-            genko: { ...genko },
-          } satisfies TextAreaData,
-        });
+      const areas = genkoAreaObjs(
+        next.spec,
+        res.page.slot,
+        genko,
+        ax,
+        margins,
+      );
+      if (areas.length) {
+        content.push(...areas);
         const target =
           chainsRef.current.find((c) => c.id === writeChainId) ??
           chainsRef.current[0];
@@ -927,7 +973,14 @@ export function App() {
             (a) => pageIndexOf(a) >= index,
           );
           const at2 = at === -1 ? target.areas.length : at;
-          setChains((cs) => insertArea(cs, target.id, at2, id));
+          const ids = areas.map((a) => a.id);
+          setChains((cs) =>
+            cs.map((c) =>
+              c.id === target.id
+                ? { ...c, areas: [...c.areas.slice(0, at2), ...ids, ...c.areas.slice(at2)] }
+                : c,
+            ),
+          );
         }
       }
     }
@@ -2027,16 +2080,18 @@ export function App() {
         o.y + o.h / 2 >= last.y &&
         o.y + o.h / 2 < last.y + last.h,
     );
-    if (inside.length !== 1) return null;
-    const d = inside[0].data as TextAreaData | undefined;
-    if (!d?.genko && !d?.auto) return null;
-    const sl = layouts
-      .get(writeChain.id)
-      ?.slices.find((s) => s.areaId === inside[0].id);
-    // 空白のみ（改行後の字下げ全角スペース等）も空扱い、さらに
-    // 連鎖未所属の空枠（sl=undefined — refit等で残った孤児枠）
-    // も削る — さもないと末尾に空ページが残ってしまう
-    return !sl || sl.text.trim() === '' ? last.id : null;
+    if (inside.length === 0) return null;
+    // v0.6: 段組では末尾ページに段数分の枠が乗る — すべて
+    // genko/auto 枠で、かつ全スライスが空（空白のみ・孤児枠
+    // も空扱い）なら末尾ページを削る
+    const slices = layouts.get(writeChain.id)?.slices;
+    const allEmpty = inside.every((o) => {
+      const d = o.data as TextAreaData | undefined;
+      if (!d?.genko && !d?.auto) return false;
+      const sl = slices?.find((s) => s.areaId === o.id);
+      return !sl || sl.text.trim() === '';
+    });
+    return allEmpty ? last.id : null;
   })();
   useEffect(() => {
     // あふれが空白だけなら追加しない — 追加すると空ページを
@@ -2168,7 +2223,14 @@ export function App() {
         (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
       );
       if (!hit) return o;
-      const old = genkoFrame(model.spec, hit.slot, d.genko, ax, margins);
+      const old = genkoFrame(
+        model.spec,
+        hit.slot,
+        d.genko,
+        ax,
+        margins,
+        d.col ?? 0,
+      );
       if (
         !old ||
         Math.abs(o.x - old.x) > eps ||
@@ -2177,7 +2239,14 @@ export function App() {
         Math.abs(o.h - old.h) > eps
       )
         return o;
-      const f = genkoFrame(model.spec, hit.slot, g, ax, margins);
+      const f = genkoFrame(
+        model.spec,
+        hit.slot,
+        g,
+        ax,
+        margins,
+        d.col ?? 0,
+      );
       if (!f) return o;
       return {
         ...o,
@@ -2188,7 +2257,66 @@ export function App() {
         data: { ...d, fontSize: f.fontSize, genko: { ...g } },
       };
     });
-    engine.setDoc({ ...engine.doc, objects });
+    // v0.6: 段数の変更 — 各ページの genko 枠を右→左で col 昇順に
+    // 揃え、足りない段は生成・多い段は削除して連鎖を貼り直す
+    const n = Math.max(1, Math.min(3, Math.round(g.columns ?? 1)));
+    const dropIds = new Set<string>();
+    const insertAfter = new Map<string, string[]>();
+    for (const r of rects) {
+      const onPage = objects
+        .filter((o) => {
+          if (o.kind !== TEXT_KIND) return false;
+          const dd = o.data as TextAreaData | undefined;
+          if (!dd?.genko) return false;
+          const cx = o.x + o.w / 2;
+          const cy = o.y + o.h / 2;
+          return (
+            cx >= r.x &&
+            cx < r.x + r.w &&
+            cy >= r.y &&
+            cy < r.y + r.h
+          );
+        })
+        .sort((a, b) => b.x - a.x); // 右→左 = col 0..k-1
+      if (!onPage.length) continue;
+      onPage.forEach((o, i) => {
+        if (i < n) return; // 残る段は先の refit で新 rect 済み
+        dropIds.add(o.id);
+      });
+      if (onPage.length < n) {
+        const extra = genkoAreaObjs(
+          model.spec,
+          r.slot,
+          g,
+          ax,
+          margins,
+        ).slice(onPage.length);
+        objects.push(...extra);
+        insertAfter.set(
+          onPage[onPage.length - 1].id,
+          extra.map((a) => a.id),
+        );
+      }
+    }
+    engine.setDoc({
+      ...engine.doc,
+      objects: objects.filter((o) => !dropIds.has(o.id)),
+    });
+    setChains((cs) =>
+      cs.map((c) => {
+        let areas = c.areas.filter((a) => !dropIds.has(a));
+        for (const [anchor, ids] of insertAfter) {
+          const at = areas.indexOf(anchor);
+          if (at !== -1)
+            areas = [
+              ...areas.slice(0, at + 1),
+              ...ids,
+              ...areas.slice(at + 1),
+            ];
+        }
+        return { ...c, areas };
+      }),
+    );
   };
 
   // v0.9: 版面マージン変更（天地・ノド・小口）— 旧マージンの枠と
@@ -2212,7 +2340,14 @@ export function App() {
         (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
       );
       if (!hit) return o;
-      const old = genkoFrame(model.spec, hit.slot, d.genko, ax, prev);
+      const old = genkoFrame(
+        model.spec,
+        hit.slot,
+        d.genko,
+        ax,
+        prev,
+        d.col ?? 0,
+      );
       if (
         !old ||
         Math.abs(o.x - old.x) > eps ||
@@ -2221,7 +2356,14 @@ export function App() {
         Math.abs(o.h - old.h) > eps
       )
         return o;
-      const f = genkoFrame(model.spec, hit.slot, d.genko, ax, m);
+      const f = genkoFrame(
+        model.spec,
+        hit.slot,
+        d.genko,
+        ax,
+        m,
+        d.col ?? 0,
+      );
       if (!f) return o;
       return {
         ...o,

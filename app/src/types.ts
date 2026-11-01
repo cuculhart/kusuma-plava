@@ -36,6 +36,10 @@ export interface PageMargins {
 export interface GenkoGrid {
   cells: number;
   cols: number;
+  /** 段数（1〜3、欠落=1段） — v0.6 */
+  columns?: number;
+  /** 段間（mm、欠落=7mm） — v0.6 */
+  gapMm?: number;
 }
 
 export interface TextAreaData {
@@ -65,6 +69,8 @@ export interface TextAreaData {
       cells×cols の原稿用紙枠。枠の内寸はちょうど升目分で、用紙変更時に
       字サイズ・中央寄せ位置を再計算して追従する（refitWritingAreas 参照） */
   genko?: GenkoGrid;
+  /** 段組の段番号 — 右段=0 から左へ増える（v0.6。欠落=単段の旧枠） */
+  col?: number;
 }
 
 /** アプリ既定フォント — Noto Serif JP 優先、無い環境は OS の明朝系へ落ちる

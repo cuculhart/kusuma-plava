@@ -905,8 +905,8 @@ function DocProps({
         if (!Number.isInteger(n) || n < 1 || n > 100) return;
         onGenko(
           axis === 'cells'
-            ? { cells: n, cols: genko.cols }
-            : { cells: genko.cells, cols: n },
+            ? { ...genko, cells: n }
+            : { ...genko, cols: n },
         );
       }}
       onBlur={() => {
@@ -1052,6 +1052,37 @@ function DocProps({
             {genkoInput('cols')}
             {t('doc.genkoRows')}
           </span>
+          {/* v0.6: 段組 — 段数と段間（右段→左段へ流れる。
+              cells/cols は「1段あたり」の升目仕様） */}
+          <select
+            value={genko.columns ?? 1}
+            onChange={(e) =>
+              onGenko({
+                ...genko,
+                columns: Number(e.currentTarget.value),
+              })
+            }
+          >
+            {[1, 2, 3].map((n) => (
+              <option key={n} value={n}>
+                {tf(t, 'doc.columns', n)}
+              </option>
+            ))}
+          </select>
+          {t('doc.gapMm')}
+          <input
+            type="number"
+            min={0}
+            max={40}
+            step={0.5}
+            style={{ width: 46 }}
+            value={genko.gapMm ?? 7}
+            onChange={(e) => {
+              const v = Number(e.currentTarget.value);
+              if (Number.isFinite(v) && v >= 0 && v <= 40)
+                onGenko({ ...genko, gapMm: v });
+            }}
+          />
         </div>
         {/* v0.3: 升目プリセット — 代表エリア（連鎖先頭→auto）を
             文書設定の升目仕様（v0.5。既定 縦20字×横20段=400字詰）の
