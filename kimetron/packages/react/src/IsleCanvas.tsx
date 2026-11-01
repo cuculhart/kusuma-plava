@@ -20,6 +20,11 @@ export function useEngineVersion(engine: Engine): number {
 export interface IsleCanvasProps {
   engine: Engine
   renderObject?: (o: WorldObject) => ReactNode
+  /** Objects failing this predicate are skipped entirely — no frame
+      div, no shape svg, no ports (viewport culling). Unlike
+      renderObject (which only governs a node's inner content), a
+      rejected object produces no DOM at all. */
+  objectFilter?: (o: WorldObject) => boolean
   onDocChange?: (doc: Doc) => void
   onSelectionChange?: (ids: ReadonlySet<string>) => void
   autoOrigin?: boolean
@@ -30,6 +35,7 @@ export interface IsleCanvasProps {
 export function IsleCanvas({
   engine,
   renderObject,
+  objectFilter,
   onDocChange,
   onSelectionChange,
   autoOrigin = true,
@@ -64,6 +70,9 @@ export function IsleCanvas({
   const page = pageFrame(engine)
   const hud = hudText(engine)
   const connectPreview = engine.connectPreview()
+  const objects = objectFilter
+    ? engine.doc.objects.filter(objectFilter)
+    : engine.doc.objects
   const selObj =
     engine.selectedIds.size === 1
       ? engine.doc.objects.find((o) => engine.selectedIds.has(o.id))
@@ -146,7 +155,7 @@ export function IsleCanvas({
           />
         )}
       </svg>
-      {renderOrder(engine.doc.objects).map((o) => {
+      {renderOrder(objects).map((o) => {
         const f = objectFrame(engine, o)
         const sel = engine.selectedIds.has(o.id)
         const shape = isShapeKind(o.kind) ? shapeAttrs(engine, o) : null
@@ -238,7 +247,7 @@ export function IsleCanvas({
         )
       })}
       <div className="ki-ports">
-        {engine.doc.objects.flatMap((o) =>
+        {objects.flatMap((o) =>
           portPoints(engine, o).map(({ port, x, y }) => (
             <div
               key={`${o.id}:${port.id}`}

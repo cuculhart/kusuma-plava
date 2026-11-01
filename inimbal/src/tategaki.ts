@@ -13,7 +13,7 @@
 //   - box.obstacles = 回しこみ障害（エリアローカル mm）— 交差する段は
 //     縦範囲をセル境界へスナップして除き、上下両区間へ配分（段内分割）
 
-import { sliceRuns, type AreaBox, type TextAttrs } from './chain';
+import type { AreaBox } from './chain';
 
 /** ルビ欄の幅 — 字セルに対する比率。段ピッチ = fontSize × (1 + これ) */
 export const RUBY_LANE_RATIO = 0.6;
@@ -50,67 +50,66 @@ export interface VUnit {
 }
 
 /**
- * 縦書き本文を組版単位へ分解する。
- * ルビ記法（｜親字《ヨミ》/親字《ヨミ》）と糖衣（(-ヨミ-)/[-親字-] (-ヨミ-)）は
- * 不可分単位、半角英数ランは tcy/rc、それ以外は1字1単位。
- * 返す units の raw を順に足すと text.length と一致する。
+ * 縦書き本文を組版単位へ分解する遅延ジェネレータ — tokenizeVertical の
+ * 逐次版。レイアウト側が箱を満たした時点で打ち切れるよう、要求された
+ * 分だけ単位を生成する（残り全文を先読みしない — 大文書の fit 高速化）
  */
-export function tokenizeVertical(text: string): VUnit[] {
-  const units: VUnit[] = [];
+export function* tokenizeUnits(text: string): Generator<VUnit, void, void> {
   let i = 0;
   while (i < text.length) {
     const rest = text.slice(i);
     let m: RegExpMatchArray | null;
-    const ruby = (base: string, yomi: string, raw: number) => {
-      units.push({
-        kind: 'ruby',
-        start: i,
-        raw,
-        cells: base.length,
-        text: base,
-        yomi,
-      });
-      i += raw;
-    };
+    const ruby = (base: string, yomi: string, raw: number): VUnit => ({
+      kind: 'ruby',
+      start: i,
+      raw,
+      cells: base.length,
+      text: base,
+      yomi,
+    });
     if ((m = rest.match(RE_SUGAR_EX))) {
-      ruby(m[1], m[2], m[0].length);
+      yield ruby(m[1], m[2], m[0].length);
+      i += m[0].length;
       continue;
     }
     if ((m = rest.match(RE_SUGAR_IM))) {
-      ruby(m[1], m[2], m[0].length);
+      yield ruby(m[1], m[2], m[0].length);
+      i += m[0].length;
       continue;
     }
     if ((m = rest.match(RE_RUBY_EX))) {
-      ruby(m[1], m[2], m[0].length);
+      yield ruby(m[1], m[2], m[0].length);
+      i += m[0].length;
       continue;
     }
     if ((m = rest.match(RE_RUBY_IM))) {
-      ruby(m[1], m[2], m[0].length);
+      yield ruby(m[1], m[2], m[0].length);
+      i += m[0].length;
       continue;
     }
     if ((m = rest.match(HALF_RUN))) {
       const run = m[0];
       if (run.length <= 4) {
         // ≤4字は縦中横 — 不可分の1セル
-        units.push({
+        yield {
           kind: 'char',
           start: i,
           raw: run.length,
           cells: 1,
           text: run,
           tcy: true,
-        });
+        };
       } else {
         // 長いランは1字1セルの回転表示へ分解
         for (let j = 0; j < run.length; j++) {
-          units.push({
+          yield {
             kind: 'char',
             start: i + j,
             raw: 1,
             cells: 1,
             text: run[j],
             rc: true,
-          });
+          };
         }
       }
       i += run.length;
@@ -118,20 +117,29 @@ export function tokenizeVertical(text: string): VUnit[] {
     }
     const ch = rest[0];
     if (ch === '\n') {
-      units.push({ kind: 'brk', start: i, raw: 1, cells: 0, text: '\n' });
+      yield { kind: 'brk', start: i, raw: 1, cells: 0, text: '\n' };
     } else {
-      units.push({
+      yield {
         kind: 'char',
         start: i,
         raw: 1,
         cells: 1,
         text: ch,
         ...(HALF_CH.test(ch) ? { rc: true } : {}),
-      });
+      };
     }
     i += 1;
   }
-  return units;
+}
+
+/**
+ * 縦書き本文を組版単位へ分解する。
+ * ルビ記法（｜親字《ヨミ》/親字《ヨミ》）と糖衣（(-ヨミ-)/[-親字-] (-ヨミ-)）は
+ * 不可分単位、半角英数ランは tcy/rc、それ以外は1字1単位。
+ * 返す units の raw を順に足すと text.length と一致する。
+ */
+export function tokenizeVertical(text: string): VUnit[] {
+  return [...tokenizeUnits(text)];
 }
 
 // 糖衣のグローバル版（投稿用テキスト出力の正規化用 — v0.3）。
@@ -214,30 +222,43 @@ export function layoutVertical(text: string, box: AreaBox): VFlow {
   const flow: VFlow = { pitch, chars: 0, segs: [] };
   if (cols <= 0 || cap <= 0) return flow;
 
-  // 部分装飾によるラン別 fontSize — marks は chain 座標なので textOffset で変換
-  const base: TextAttrs = {
-    fontSize: baseFs,
-    fontFamily: box.fontFamily,
-    bold: box.bold,
-    italic: box.italic,
-  };
-  const runs = sliceRuns(text, box.marks, box.textOffset ?? 0, base);
-  const rb: { s: number; e: number; fs: number }[] = [];
-  {
-    let a = 0;
-    for (const r of runs) {
-      rb.push({ s: a, e: a + r.text.length, fs: r.attrs.fontSize ?? baseFs });
-      a += r.text.length;
-    }
-  }
+  // 部分装飾によるラン別 fontSize — marks は chain 座標なので
+  // textOffset で変換。問い合わせは消費単位だけなので、残り全文を
+  // sliceRuns でラン化せず fontSize を持つマークから直接引く
+  // （後勝ち: マーク配列の後方ほど優先 — sliceRuns と同じ規則）
+  const off = box.textOffset ?? 0;
+  const fsMarks = (box.marks ?? [])
+    .filter(
+      (m) =>
+        m.attrs.fontSize !== undefined &&
+        m.end > off &&
+        m.start < off + text.length,
+    )
+    .map((m) => ({
+      s: Math.max(0, m.start - off),
+      e: Math.min(text.length, m.end - off),
+      fs: m.attrs.fontSize!,
+    }));
   const fsAt = (p: number) => {
-    for (const r of rb) if (p < r.e) return r.fs;
-    return baseFs;
+    let fs = baseFs;
+    for (const m of fsMarks) if (m.s <= p && p < m.e) fs = m.fs;
+    return fs;
   };
 
   // 単位は装飾ランにまたがって切らない（ルビの記法がラン境界で
-  // 壊れないよう全文を先にトークン化 — 描画側も同じ分割を使う）
-  const units = tokenizeVertical(text);
+  // 壊れないよう描画側と同じ分割を使う）。箱が満たされた時点で
+  // 打ち切れるよう遅延トークン化する — fit が残り全文をスキャン
+  // しない（大文書の連鎖レイアウトで支配的コストだった）
+  const gen = tokenizeUnits(text);
+  const units: VUnit[] = []; // 消費分だけ逐次実体化
+  const unitAt = (k: number): VUnit | undefined => {
+    while (units.length <= k) {
+      const n = gen.next();
+      if (n.done) return undefined;
+      units.push(n.value);
+    }
+    return units[k];
+  };
   const unitH = (u: VUnit) => u.cells * fsAt(u.start);
 
   // 段（右から col 番目 = x 区間 [width-(col+1)pitch, width-col·pitch)）の
@@ -270,14 +291,14 @@ export function layoutVertical(text: string, box: AreaBox): VFlow {
   };
 
   let u = 0;
-  for (let col = 0; col < cols && u < units.length; col++) {
+  for (let col = 0; col < cols && unitAt(u); col++) {
     for (const seg of freeIntervals(col)) {
-      if (u >= units.length) break;
+      if (!unitAt(u)) break;
       const u0 = u; // 現区間の先頭単位 index（禁則の前倒し範囲）
       let used = 0;
       let colBrk = false; // brk = 段送り → この段の残り区間は使わない
-      while (u < units.length) {
-        const un = units[u];
+      while (unitAt(u)) {
+        const un = unitAt(u)!;
         if (un.kind === 'brk') {
           // \n = 段送り — 段を1つ消費して次段へ
           u++;
@@ -298,8 +319,8 @@ export function layoutVertical(text: string, box: AreaBox): VFlow {
           // 行末禁則なら、境界を最大2単位前倒しして次区間へ送る
           let pull = 0;
           while (pull < 2 && u - pull - 1 >= u0) {
-            const last = units[u - pull - 1];
-            const next = units[u - pull];
+            const last = unitAt(u - pull - 1)!;
+            const next = unitAt(u - pull)!;
             if (
               !isHeadKinsoku(next.text[0]) &&
               !isEndKinsoku(last.text[last.text.length - 1])

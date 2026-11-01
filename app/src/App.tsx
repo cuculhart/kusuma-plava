@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { IsleCanvas, useEngine, useEngineVersion } from '@kimetron/react';
 import { formatLength, type Engine, type WorldObject } from '@kimetron/core';
@@ -589,6 +589,12 @@ export function App() {
   const placingRef = useRef(placing);
   placingRef.current = placing;
   const measurerRef = useRef(createCanvasMeasurer());
+  // v0.7: ページビューア — 一度だけ bind されるホイール/リサイズ
+  // ハンドラが最新の現ページ・focusPage を参照するための ref
+  const curPageRef = useRef(0);
+  const focusPageRef = useRef<(i: number) => void>(() => {});
+  const wheelAcc = useRef(0);
+  const wheelAt = useRef(0);
 
   // ── 積み軸（v0.4）— ページは同じ PageModel を2つの世界座標系で解釈する:
   //   'y' = 組版モードの縦積み（従来）、'x' = 執筆モードの右→左横積み。
@@ -1240,30 +1246,64 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor]);
 
-  // v0.4: 執筆モードのホイール横送り — ページは右→左に並ぶので
-  // ホイール（deltaY やトラックパッド deltaX）は横パンへ向ける。
-  // canvas-wrap の capture で kimetron 側のホイール（ズーム）を
-  // 抑止してから処理する。Ctrl/Cmd+ホイールはピンチズームとして通す。
+  // v0.7: 執筆モードのホイール = ページめくり — ページビューア化で
+  // 可変ズームと自由パンを廃止したため、ホイール送りは現ページ±1へ
+  // 進退するだけ。小刻みな delta（トラックパッド）は累積して閾値で
+  // 1ページ進退し、逆方向や間が空いた送りでは累積を捨てる。
+  // Ctrl+ホイール（ピンチ）を含め kimetron 側へは一切渡さない
+  // （capture で抑止）。中ボタンドラッグのパンも同様に潰す
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (!writeModeRef.current || e.ctrlKey || e.metaKey) return;
+      if (!writeModeRef.current) return;
       e.preventDefault();
       e.stopPropagation();
-      // 送り方向 = 読み進め方向（wheel 下/トラックパッド左 = 次のページへ
-      // = ワールド x 負側が見えるよう content を右へ → viewport.x 増加）
-      engine.viewport.x += e.deltaX + e.deltaY;
-      engine.panBy(0, 0); // viewport 反映のため emit
+      if (e.ctrlKey || e.metaKey) return;
+      const d = e.deltaX + e.deltaY;
+      if (d === 0) return;
+      const now = performance.now();
+      if (
+        now - wheelAt.current > 400 ||
+        Math.sign(d) !== Math.sign(wheelAcc.current)
+      )
+        wheelAcc.current = 0;
+      wheelAt.current = now;
+      wheelAcc.current += d;
+      if (Math.abs(wheelAcc.current) >= 80) {
+        const step = d > 0 ? 1 : -1;
+        wheelAcc.current = 0;
+        focusPageRef.current(curPageRef.current + step);
+      }
+    };
+    const onMid = (e: PointerEvent) => {
+      if (writeModeRef.current && e.button === 1) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
     };
     el.addEventListener('wheel', onWheel, {
       capture: true,
       passive: false,
     });
-    return () =>
+    el.addEventListener('pointerdown', onMid, { capture: true });
+    return () => {
       el.removeEventListener('wheel', onWheel, { capture: true });
+      el.removeEventListener('pointerdown', onMid, { capture: true });
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine]);
+
+  // v0.7: ページ高さ=ウィンドウ高さの固定表示 — リサイズで再フィット
+  // する（執筆モードのみ。組版は従来の手動フィットのまま）
+  useEffect(() => {
+    const onResize = () => {
+      if (writeModeRef.current) focusPageRef.current(curPageRef.current);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // F24: Alt 押下でスナップ（グリッド＋オブジェクト吸着）を一時解除
   useEffect(() => {
@@ -1645,11 +1685,15 @@ export function App() {
       lastGroupClickRef.current = null;
     }
     // ページ枠クリック → アクティブページを切り替える
+    // （執筆モードではそのページへ移動 = ナビと同じ扱い）
     if (o?.kind === PAGE_KIND) {
       const idx = pageRects(model.spec, model.pages, curAxis()).findIndex(
         (p) => p.id === o.id,
       );
-      if (idx >= 0) setActivePage(idx);
+      if (idx >= 0) {
+        if (writeModeRef.current) focusPage(idx);
+        else setActivePage(idx);
+      }
     }
     setSelLink(null);
   };
@@ -2029,54 +2073,70 @@ export function App() {
     });
   };
 
-  // ── 連鎖レイアウト（再描画のたびに貪欲配分） ──
+  // ── 連鎖レイアウト（貪欲配分） ──
+  // v0.7: 大文書対応 — fitVertical は呼出のたび残り全文を
+  // トークン化するため全体で O(エリア数×残文字数)。再描画のたびに
+  // 全再計算するとページめくり1回でも数秒かかるので、依存が変わ
+  // った時だけ計算する。ページめくり・パン・カーソル移動では
+  // engine.version が進むが doc/chains は不変 → キャッシュ命中。
+  // 幾何ジェスチャ中（drag/resize/rotate/vertex/bend）は liveRect が
+  // engine のジェスチャ状態を読むため、毎 emit で再計算する。
   const objById = new Map(engine.doc.objects.map((o) => [o.id, o]));
-  const layouts = new Map<string, LayoutResult>();
-  // v0.4: 回しこみ — 障害のある縦書きエリアは layoutVertical の
-  // 段×区間割当計画を保持し、描画は計画どおり区間を絶対配置する
-  // （CSS writing-mode には障害を教えられないため — 案B。
-  // 障害無しのスライスは従来どおり CSS 折返しで描く）
-  const vflows = new Map<string, VFlow>();
-  for (const c of chains) {
-    const boxes: AreaBox[] = [];
-    const boxById = new Map<string, AreaBox>();
-    for (const id of c.areas) {
-      const o = objById.get(id);
-      if (!o) continue;
-      const r = liveRect(engine, o);
-      const d = { ...DEFAULT_TEXT_DATA, ...(o.data as TextAreaData) };
-      const box: AreaBox = {
-        id,
-        width: Math.max(0, r.w - 2 * TEXT_PAD_MM),
-        height: Math.max(0, r.h - 2 * TEXT_PAD_MM),
-        fontSize: d.fontSize,
-        fontFamily: d.fontFamily,
-        bold: d.bold,
-        italic: d.italic,
-        writing: d.writing,
-        ...(d.writing === 'vertical-rl'
-          ? { obstacles: areaObstacles(engine, o) }
-          : {}),
-      };
-      boxes.push(box);
-      boxById.set(id, box);
-    }
-    const lr = layoutChain(c.text, boxes, measurerRef.current, c.marks);
-    layouts.set(c.id, lr);
-    for (const sl of lr.slices) {
-      const b = boxById.get(sl.areaId);
-      if (b?.writing === 'vertical-rl' && b.obstacles?.length) {
-        vflows.set(
-          sl.areaId,
-          layoutVertical(sl.text, {
-            ...b,
-            marks: c.marks,
-            textOffset: sl.offset,
-          }),
-        );
+  const liveGeom = ['drag', 'resize', 'rotate', 'vertex', 'bend'].includes(
+    engine.mode,
+  )
+    ? engine.version
+    : 0;
+  const { layouts, vflows } = useMemo(() => {
+    const layouts = new Map<string, LayoutResult>();
+    // v0.4: 回しこみ — 障害のある縦書きエリアは layoutVertical の
+    // 段×区間割当計画を保持し、描画は計画どおり区間を絶対配置する
+    // （CSS writing-mode には障害を教えられないため — 案B。
+    // 障害無しのスライスは従来どおり CSS 折返しで描く）
+    const vflows = new Map<string, VFlow>();
+    for (const c of chains) {
+      const boxes: AreaBox[] = [];
+      const boxById = new Map<string, AreaBox>();
+      for (const id of c.areas) {
+        const o = objById.get(id);
+        if (!o) continue;
+        const r = liveRect(engine, o);
+        const d = { ...DEFAULT_TEXT_DATA, ...(o.data as TextAreaData) };
+        const box: AreaBox = {
+          id,
+          width: Math.max(0, r.w - 2 * TEXT_PAD_MM),
+          height: Math.max(0, r.h - 2 * TEXT_PAD_MM),
+          fontSize: d.fontSize,
+          fontFamily: d.fontFamily,
+          bold: d.bold,
+          italic: d.italic,
+          writing: d.writing,
+          ...(d.writing === 'vertical-rl'
+            ? { obstacles: areaObstacles(engine, o) }
+            : {}),
+        };
+        boxes.push(box);
+        boxById.set(id, box);
+      }
+      const lr = layoutChain(c.text, boxes, measurerRef.current, c.marks);
+      layouts.set(c.id, lr);
+      for (const sl of lr.slices) {
+        const b = boxById.get(sl.areaId);
+        if (b?.writing === 'vertical-rl' && b.obstacles?.length) {
+          vflows.set(
+            sl.areaId,
+            layoutVertical(sl.text, {
+              ...b,
+              marks: c.marks,
+              textOffset: sl.offset,
+            }),
+          );
+        }
       }
     }
-  }
+    return { layouts, vflows };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chains, engine.doc.objects, liveGeom]);
 
   // 右ペインの駆動源（選択オブジェクト配列）
   const selObjs = engine.doc.objects.filter((o) =>
@@ -2180,21 +2240,22 @@ export function App() {
   const axis: StackAxis = writeMode ? 'x' : 'y';
   const rects = pageRects(model.spec, model.pages, axis);
   const curPage = Math.min(activePage, Math.max(0, rects.length - 1));
+  curPageRef.current = curPage;
   // G1+G2: ページが収まる倍率に調整して位置合わせする。
-  // 執筆モードは用紙の縦でフィット（画面は用紙高さ基準）—
-  // 横は用紙右端をキャンバス右端へ合わせる（縦書きの書き出し＝
-  // 右上の書字列が画面右へ来る配置）。横積みでは後のページほど
-  // 左へ延びるため、右端合わせがそのまま見開き送りになる。
+  // v0.7: 執筆モードはページ高さをウィンドウ高さで固定し、
+  // 現ページを中央表示するページビューア — 横位置は両軸中央揃え。
   // 組版モードは従来通りページ全体が収まる倍率 + 左上合わせ。
   const focusPage = (i: number, mdl: PageModel = model) => {
     suppressDblUntil.current = performance.now() + 700;
-    setActivePage(i);
-    const el = canvasRef.current;
-    const p = pageRects(
+    const rs = pageRects(
       mdl.spec,
       mdl.pages,
       writeModeRef.current ? 'x' : 'y',
-    )[i];
+    );
+    const idx = Math.min(Math.max(0, i), Math.max(0, rs.length - 1));
+    setActivePage(idx);
+    const el = canvasRef.current;
+    const p = rs[idx];
     if (!el || !p) return;
     const pad = 30; // ルーラー帯 + 余白(px)
     const zoom = Math.min(
@@ -2214,18 +2275,29 @@ export function App() {
       ...engine.viewport,
       zoom,
       x: writeModeRef.current
-        ? el.clientWidth - pad - (p.x + p.w) * u
+        ? (el.clientWidth - p.w * u) / 2 - p.x * u
         : pad - p.x * u,
       y: pad - p.y * u,
     };
     engine.panBy(0, 0); // viewport 反映のため emit を起こす
   };
+  focusPageRef.current = focusPage;
   const goToPage = (i: number) => focusPage(i);
+
+  // 末尾ページの自動削除等で現ページが圏外へ出たら補正して再フィット
+  // （activePage が clamp された = ページ数が縮んだ印）
+  useEffect(() => {
+    if (writeMode && curPage !== activePage) focusPage(curPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curPage, activePage, writeMode]);
 
   const { spec } = model;
   const z = engine.viewport.zoom;
   // v0.3: 総字数（status.chars・目標進捗で共用）— サロゲート対は1字
-  const totalChars = chains.reduce((n, c) => n + [...c.text].length, 0);
+  const totalChars = useMemo(
+    () => chains.reduce((n, c) => n + [...c.text].length, 0),
+    [chains],
+  );
   // 「下書き HH:MM」表示用の時刻整形
   const fmtTime = (iso: string) => {
     const d = new Date(iso);
@@ -2532,21 +2604,22 @@ export function App() {
     };
   })();
 
+  // v0.7: 執筆モードのビューポート仮想化 — 大文書では全ページ・
+  // 全エリアの DOM 化が支配的コスト。IsleCanvas の objectFilter で
+  // 現ページ±1 のページ区間に乗るオブジェクトだけ DOM 化する
+  // （ページ枠・エリア矩形の ki-obj ネイティブ描画も間引く）。
+  // ページ枠に乗らないオブジェクト（帯の隙間）は従来どおり描く
+  const inView = (o: WorldObject) => {
+    const cx = o.x + o.w / 2;
+    const cy = o.y + o.h / 2;
+    const hit = rects.find(
+      (r) =>
+        cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
+    );
+    return !hit || Math.abs(hit.index - curPage) <= 1;
+  };
+
   const renderObject = (o: WorldObject) => {
-    // v0.7: 執筆モードの仮想化 — 大文書では全エリアの
-    // sliceRuns/DOM が支配的コスト。現ページ±1以外は描かない
-    if (writeMode) {
-      const cx = o.x + o.w / 2;
-      const cy = o.y + o.h / 2;
-      const hit = rects.find(
-        (r) =>
-          cx >= r.x &&
-          cx < r.x + r.w &&
-          cy >= r.y &&
-          cy < r.y + r.h,
-      );
-      if (hit && Math.abs(hit.index - curPage) > 1) return null;
-    }
     if (o.kind === PAGE_KIND) {
       const d = o.data as { index: number };
       return (
@@ -2942,6 +3015,7 @@ export function App() {
             engine={engine}
             style={{ position: 'absolute', inset: 0 }}
             renderObject={renderObject}
+            objectFilter={writeMode ? inView : undefined}
           />
           {/* 空ドキュメントの初見ヒント（ページ枠のみの時に表示） */}
           {!engine.doc.objects.some((o) => o.kind !== PAGE_KIND) && (
@@ -3142,40 +3216,34 @@ export function App() {
             t={t}
           />
           {/* N-19: スクロール（ホイールパン不慣れ対策のフローティングUI）。
-              執筆モード（横積み・右→左）では前のページが右側にあるため
-              ▶=前へ・◀=次へ の横送りになる */}
-          <div className="scroll-nav">
-            <button
-              title={t('scroll.up')}
-              onClick={() => {
-                const el = canvasRef.current;
-                if (!el) return;
-                if (writeModeRef.current) {
-                  engine.viewport.x -= el.clientWidth * 0.6;
-                } else {
+              v0.7: 執筆モードはページナビのみへ再構成し左右ボタンを
+              廃止 — 残るのは組版（縦積み）の俯瞰移動用 */}
+          {!writeMode && (
+            <div className="scroll-nav">
+              <button
+                title={t('scroll.up')}
+                onClick={() => {
+                  const el = canvasRef.current;
+                  if (!el) return;
                   engine.viewport.y += el.clientHeight * 0.6;
-                }
-                engine.panBy(0, 0);
-              }}
-            >
-              {writeMode ? '▶' : '▲'}
-            </button>
-            <button
-              title={t('scroll.down')}
-              onClick={() => {
-                const el = canvasRef.current;
-                if (!el) return;
-                if (writeModeRef.current) {
-                  engine.viewport.x += el.clientWidth * 0.6;
-                } else {
+                  engine.panBy(0, 0);
+                }}
+              >
+                ▲
+              </button>
+              <button
+                title={t('scroll.down')}
+                onClick={() => {
+                  const el = canvasRef.current;
+                  if (!el) return;
                   engine.viewport.y -= el.clientHeight * 0.6;
-                }
-                engine.panBy(0, 0);
-              }}
-            >
-              {writeMode ? '◀' : '▼'}
-            </button>
-          </div>
+                  engine.panBy(0, 0);
+                }}
+              >
+                ▼
+              </button>
+            </div>
+          )}
           {placing && ghost && (
             <div
               className="img-ghost"
@@ -3368,7 +3436,8 @@ export function App() {
           </span>
         )}
         <span>{tf(t, 'status.pages', model.pages.length)}</span>
-        <span>scale {engine.scaleText()}</span>
+        {/* v0.7: 執筆モードは固定倍率のためスケール表示を出さない */}
+        {!writeMode && <span>scale {engine.scaleText()}</span>}
         <span>
           ({formatLength(engine.cursorWorld.x, 'mm')},{' '}
           {formatLength(engine.cursorWorld.y, 'mm')})
