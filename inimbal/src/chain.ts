@@ -91,6 +91,8 @@ export interface TextAttrs {
   underline?: boolean;
   /** URL リンク（印刷/PDF で <a> 化。編集画面では遷移しない） */
   link?: string;
+  /** 傍点（青空文庫注記由来 — 描画は一律「・」= sesame） */
+  boten?: boolean;
   /** ルビ（ヨミガナ文字列）。縦書きエリアで <ruby> として描く。
       v0.1 では本文の ｜《》 記法を描画時に解釈するため未使用 — 将来
       marks 経由でルビを持たせるための予約属性（傍点・圏点も想定） */

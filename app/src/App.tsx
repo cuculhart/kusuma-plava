@@ -36,6 +36,7 @@ import {
   type PaperSpec,
   type StackAxis,
   type TextAttrs,
+  type TextMark,
   type VFlow,
 } from 'inimbal';
 import { RightDock } from './Inspector';
@@ -49,6 +50,7 @@ import { packArchive, unpackArchive } from './docio';
 import { loadDraft, saveDraft } from './autosave';
 import { createCanvasMeasurer } from './measure';
 import { vunitSpans, type VStyle } from './vtrender';
+import { parseAozora, type AozoraResult } from './aozora';
 import {
   DEFAULT_FONT_FAMILY,
   DEFAULT_GRID_BG,
@@ -1478,7 +1480,10 @@ export function App() {
           : o;
       }),
     );
-    setChains(r.chains);
+    // 旧書庫・下書きに残る \r を正規化（textarea は LF 前提）
+    setChains(
+      r.chains.map((c) => ({ ...c, text: c.text.replace(/\r\n?/g, '\n') })),
+    );
     setWriteChainId(null);
     setFooter(r.footer);
     setDocTitle(r.title);
@@ -2082,6 +2087,33 @@ export function App() {
   // 幾何ジェスチャ中（drag/resize/rotate/vertex/bend）は liveRect が
   // engine のジェスチャ状態を読むため、毎 emit で再計算する。
   const objById = new Map(engine.doc.objects.map((o) => [o.id, o]));
+  // v0.8: 青空注記は描画時に解釈 — 連鎖 text は公式 txt のまま
+  // 保持し、組版はパース結果（text + marks）で行う。
+  // 生⇔変換の位置マップで手動マーク・キャレット同期も整合する
+  const aozora = useMemo(() => {
+    const m = new Map<string, AozoraResult>();
+    const hfs =
+      (genkoFontSize(model.spec, genko, margins) ??
+        DEFAULT_TEXT_DATA.fontSize) * 1.3;
+    for (const c of chains) m.set(c.id, parseAozora(c.text, { headingFs: hfs }));
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chains, model.spec, genko, margins]);
+  // レイアウト・描画に使う marks = 青空注記由来（変換座標）
+  // + ユーザー手動 marks（生座標→変換座標へマップ）
+  const chainMarks = (c: Chain): TextMark[] => {
+    const marks = c.marks ?? [];
+    const pz = aozora.get(c.id);
+    if (!pz || (!pz.marks.length && !marks.length)) return marks;
+    return [
+      ...pz.marks,
+      ...marks.map((m) => ({
+        start: pz.toParsed(m.start),
+        end: pz.toParsed(m.end),
+        attrs: m.attrs,
+      })),
+    ];
+  };
   const liveGeom = ['drag', 'resize', 'rotate', 'vertex', 'bend'].includes(
     engine.mode,
   )
@@ -2118,7 +2150,13 @@ export function App() {
         boxes.push(box);
         boxById.set(id, box);
       }
-      const lr = layoutChain(c.text, boxes, measurerRef.current, c.marks);
+      const pz = aozora.get(c.id);
+      const lr = layoutChain(
+        pz?.text ?? c.text,
+        boxes,
+        measurerRef.current,
+        chainMarks(c),
+      );
       layouts.set(c.id, lr);
       for (const sl of lr.slices) {
         const b = boxById.get(sl.areaId);
@@ -2127,7 +2165,7 @@ export function App() {
             sl.areaId,
             layoutVertical(sl.text, {
               ...b,
-              marks: c.marks,
+              marks: chainMarks(c),
               textOffset: sl.offset,
             }),
           );
@@ -2136,7 +2174,7 @@ export function App() {
     }
     return { layouts, vflows };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chains, engine.doc.objects, liveGeom]);
+  }, [chains, engine.doc.objects, liveGeom, aozora]);
 
   // 右ペインの駆動源（選択オブジェクト配列）
   const selObjs = engine.doc.objects.filter((o) =>
@@ -2232,7 +2270,60 @@ export function App() {
       return;
     }
     wcLastOv.current = '';
-    if (wcEmptyTail) setTimeout(() => removePage(wcEmptyTail), 0);
+    if (wcEmptyTail)
+      setTimeout(() => {
+        // バグ等で空末尾ページが量産された場合、1枚ずつでは
+        // 追いつかない — 末尾から連続する空ページを一括削除する
+        const prs = pageRects(model.spec, model.pages, curAxis());
+        const slices = layouts.get(writeChain!.id)?.slices;
+        const tail: string[] = [];
+        const tailRects: typeof prs = [];
+        for (let i = prs.length - 1; i >= 1; i--) {
+          const pr = prs[i];
+          const inside = engine.doc.objects.filter(
+            (o) =>
+              o.kind !== PAGE_KIND &&
+              o.x + o.w / 2 >= pr.x &&
+              o.x + o.w / 2 < pr.x + pr.w &&
+              o.y + o.h / 2 >= pr.y &&
+              o.y + o.h / 2 < pr.y + pr.h,
+          );
+          if (!inside.length) break;
+          const allEmpty = inside.every((o) => {
+            const d = o.data as TextAreaData | undefined;
+            if (!d?.genko && !d?.auto) return false;
+            const sl = slices?.find((s) => s.areaId === o.id);
+            return !sl || sl.text.trim() === '';
+          });
+          if (!allEmpty) break;
+          tail.unshift(pr.id);
+          tailRects.unshift(pr);
+        }
+        if (!tail.length) return;
+        const insideIds = new Set<string>();
+        const objs = engine.doc.objects.filter((o) => {
+          if (o.kind === PAGE_KIND) return false;
+          const cx = o.x + o.w / 2;
+          const cy = o.y + o.h / 2;
+          const onTail = tailRects.some(
+            (pr) =>
+              cx >= pr.x && cx < pr.x + pr.w && cy >= pr.y && cy < pr.y + pr.h,
+          );
+          if (!onTail) return true;
+          insideIds.add(o.id);
+          return false;
+        });
+        if (insideIds.size)
+          setChains((cs) =>
+            cs.map((c) => ({
+              ...c,
+              areas: c.areas.filter((a) => !insideIds.has(a)),
+            })),
+          );
+        let next = model;
+        for (const id of tail) next = deletePage(next, id);
+        commitPages(next, objs);
+      }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wcOverflow, wcEmptyTail]);
 
@@ -2240,6 +2331,58 @@ export function App() {
   const axis: StackAxis = writeMode ? 'x' : 'y';
   const rects = pageRects(model.spec, model.pages, axis);
   const curPage = Math.min(activePage, Math.max(0, rects.length - 1));
+
+  // 連鎖テキスト ⇄ ページの双方向シンク（v0.8）
+  // Slice.offset が連鎖内の開始位置を持つので、テキスト位置から
+  // 表示すべきページが引ける（逆はページ上の最初のエリアの offset）
+  const pageIndexOf = (o: WorldObject | undefined) => {
+    if (!o) return -1;
+    const cx = o.x + o.w / 2;
+    const cy = o.y + o.h / 2;
+    return (
+      rects.find(
+        (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
+      )?.index ?? -1
+    );
+  };
+  const writeSlices = writeChain
+    ? (layouts.get(writeChain.id)?.slices ?? [])
+    : [];
+  const caretPage = (pos: number) => {
+    if (!writeSlices.length) return -1;
+    // キャレットは生テキスト座標、スライスは変換後座標 — 写像で揃える
+    const pz = writeChain ? aozora.get(writeChain.id) : undefined;
+    const pp = pz ? pz.toParsed(pos) : pos;
+    let sl = writeSlices[writeSlices.length - 1];
+    for (const s of writeSlices) {
+      if (pp < s.offset + s.text.length) {
+        sl = s;
+        break;
+      }
+    }
+    return pageIndexOf(objById.get(sl.areaId));
+  };
+  // テキスト → ビュー: キャレット位置のページへ移動
+  const syncViewToCaret = (pos: number) => {
+    const pg = caretPage(pos);
+    if (pg >= 0 && pg !== curPage) {
+      setActivePage(pg);
+      focusPage(pg);
+    }
+  };
+  // ビュー → テキスト: 現ページの先頭文字へキャレットを移す。
+  // 検索ジャンプも同じ経路（onJumpSel）へ統一
+  const [textJump, setTextJump] = useState<{ s: number; e: number; n: number }>();
+  const syncTextToView = () => {
+    const s = writeSlices.find(
+      (sl) => pageIndexOf(objById.get(sl.areaId)) === curPage,
+    );
+    if (s) {
+      const pz = writeChain ? aozora.get(writeChain.id) : undefined;
+      const pos = pz ? pz.toRaw(s.offset) : s.offset;
+      setTextJump((prev) => ({ s: pos, e: pos, n: (prev?.n ?? 0) + 1 }));
+    }
+  };
   curPageRef.current = curPage;
   // G1+G2: ページが収まる倍率に調整して位置合わせする。
   // v0.7: 執筆モードはページ高さをウィンドウ高さで固定し、
@@ -2689,7 +2832,11 @@ export function App() {
       const c = chainOf(chains, o.id);
       const lr = c ? layouts.get(c.id) : undefined;
       const sl = lr?.slices.find((s) => s.areaId === o.id);
-      const runs = sliceRuns(sl?.text ?? '', c?.marks, sl?.offset ?? 0, {
+      const runs = sliceRuns(
+        sl?.text ?? '',
+        c ? chainMarks(c) : undefined,
+        sl?.offset ?? 0,
+        {
         fontSize: d.fontSize,
         fontFamily: d.fontFamily,
         color: d.color,
@@ -2732,6 +2879,8 @@ export function App() {
             fontStyle: a?.italic ? 'italic' : undefined,
             textDecoration:
               a?.underline || a?.link ? 'underline' : undefined,
+            // 傍点（青空注記由来）— 一律 sesame「・」
+            textEmphasis: a?.boten ? 'sesame' : undefined,
           },
           title: a?.link,
         };
@@ -2819,6 +2968,7 @@ export function App() {
                         r.attrs.underline || r.attrs.link
                           ? 'underline'
                           : undefined,
+                      textEmphasis: r.attrs.boten ? 'sesame' : undefined,
                     }}
                   >
                     {r.text}
@@ -3276,6 +3426,16 @@ export function App() {
           chainOverflow={
             dockChain ? (layouts.get(dockChain.id)?.overflow ?? '') : ''
           }
+          // 連鎖テキスト ⇄ ページの双方向シンク（執筆モードのみ）
+          onCaret={writeMode ? syncViewToCaret : undefined}
+          onGotoText={writeMode ? syncTextToView : undefined}
+          onJumpSel={
+            writeMode
+              ? (s, e) =>
+                  setTextJump((prev) => ({ s, e, n: (prev?.n ?? 0) + 1 }))
+              : undefined
+          }
+          textJump={textJump}
           onChainText={(text) =>
             setChains((cs) =>
               cs.map((c) =>
@@ -3464,7 +3624,7 @@ export function App() {
             const sl = lr?.slices.find((s) => s.areaId === o.id);
             if (!sl) return [];
             const d = { ...DEFAULT_TEXT_DATA, ...(o.data as TextAreaData) };
-            return sliceRuns(sl.text, c.marks, sl.offset, {
+            return sliceRuns(sl.text, chainMarks(c), sl.offset, {
               fontSize: d.fontSize,
               fontFamily: d.fontFamily,
               color: d.color,
@@ -3561,13 +3721,29 @@ export function App() {
                     );
                   commitPages(next, objs);
                 }
+                // 青空注記は描画側で解釈 — 連鎖テキストは公式
+                // txt のまま保持する（編集・検索が生文に対して動く）。
+                // ここでは注記件数の報告だけパースする。
+                // CRLF 改行は \n へ正規化 — textarea は値を LF に
+                // 正規化するため、\r が残るとキャレット位置が
+                // 行数ぶんズレる（検索・ページシンクが壊れる）
+                const src = text.replace(/\r\n?/g, '\n');
+                const parsed = parseAozora(src);
                 setChains((cs) =>
                   cs.map((c) =>
-                    c.id === target.id ? { ...c, text } : c,
+                    c.id === target.id
+                      ? { ...c, text: src, marks: [] }
+                      : c,
                   ),
                 );
                 setBusy(null);
-                flash(tf(t, 'hint.imported', f.name));
+                flash(
+                  tf(t, 'hint.imported', f.name) +
+                    (parsed.handled || parsed.dropped
+                      ? ' / ' +
+                        tf(t, 'hint.aozora', parsed.handled, parsed.dropped)
+                      : ''),
+                );
               }, 30),
             );
           });

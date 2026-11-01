@@ -182,6 +182,10 @@ export function RightDock({
   goal,
   onGoal,
   chainOverflow,
+  onCaret,
+  onGotoText,
+  onJumpSel,
+  textJump,
   onChainText,
   onApplyMark,
   onClearMarks,
@@ -215,6 +219,12 @@ export function RightDock({
   goal: number;
   onGoal: (chars: number) => void;
   chainOverflow: string;
+  /** 連鎖テキスト ⇄ ページ双方向シンク（執筆モードのみ）。
+      onCaret = テキスト→ビュー、onGotoText/textJump = ビュー→テキスト */
+  onCaret?: (pos: number) => void;
+  onGotoText?: () => void;
+  onJumpSel?: (s: number, e: number) => void;
+  textJump?: { s: number; e: number; n: number };
   onChainText: (text: string) => void;
   /** 連鎖テキスト [s,e) への部分装飾適用 */
   onApplyMark: (s: number, e: number, attrs: Partial<TextAttrs>) => void;
@@ -326,6 +336,10 @@ export function RightDock({
           chains={chains}
           onPickChain={onSelectChain}
           writeMode={writeMode}
+          onCaret={onCaret}
+          onGotoText={onGotoText}
+          onJumpSel={onJumpSel}
+          textJump={textJump}
           t={t}
         />
         <details className="doc-settings">

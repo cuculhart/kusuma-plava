@@ -11,6 +11,84 @@ import type { TextAreaData } from './types';
 import { DEFAULT_TEXT_DATA, FONT_SIZES_MM } from './types';
 import { FontPick } from './FontPick';
 
+// textarea のキャレット位置へスクロールする — ブラウザの
+// caret-into-view は環境依存で効かないため、同じスタイルの
+// 不可視 div で文字位置を実測して scrollTop を直接設定する
+// （禁則処理やぶら下がり空白も含め実際の折返しを測れる
+// 定番手法 — canvas シミュレートでは行折り規則を再現しきれない）
+const scrollTaToCaret = (el: HTMLTextAreaElement, pos: number) => {
+  const div = document.createElement('div');
+  const cs = getComputedStyle(el);
+  // textarea-caret-position 定番のプロパティ一式 — フォント
+  // メトリクス・パディング・ラップ挙動を完全に揃えないと
+  // 長文では行数ぶん誤差が蓄積する
+  const props = [
+    'borderTopWidth',
+    'borderRightWidth',
+    'borderBottomWidth',
+    'borderLeftWidth',
+    'borderStyle',
+    'paddingTop',
+    'paddingRight',
+    'paddingBottom',
+    'paddingLeft',
+    'fontStyle',
+    'fontVariant',
+    'fontWeight',
+    'fontStretch',
+    'fontSize',
+    'fontSizeAdjust',
+    'lineHeight',
+    'fontFamily',
+    'textAlign',
+    'textTransform',
+    'textIndent',
+    'textDecoration',
+    'letterSpacing',
+    'wordSpacing',
+    'tabSize',
+    'fontKerning',
+    'fontFeatureSettings',
+    'fontVariantEastAsian',
+    'textRendering',
+    'wordBreak',
+    'overflowWrap',
+    'lineBreak',
+    'direction',
+    'unicodeBidi',
+    'textSizeAdjust',
+  ];
+  for (const p of props) div.style.setProperty(p, cs.getPropertyValue(p));
+  // 幅は css width ではなく clientWidth − padding を使う —
+  // 縦スクロールバー分の差で折返し位置が変わる
+  const padL = parseFloat(cs.paddingLeft) || 0;
+  const padR = parseFloat(cs.paddingRight) || 0;
+  div.style.boxSizing = 'content-box';
+  div.style.width = `${el.clientWidth - padL - padR}px`;
+  div.style.whiteSpace = 'pre-wrap';
+  if (!cs.overflowWrap || cs.overflowWrap === 'normal')
+    div.style.overflowWrap = 'break-word';
+  div.style.position = 'absolute';
+  div.style.visibility = 'hidden';
+  div.textContent = el.value.slice(0, pos);
+  const marker = document.createElement('span');
+  marker.textContent = el.value.slice(pos, pos + 1) || 'x';
+  div.appendChild(marker);
+  // 全文を入れて総高さを比べ、比率で位置を自己補正する —
+  // 環境差で発生する折返しの系統的誤差は el/div の
+  // scrollHeight 比で打ち消せる（pos までの部分だけでは
+  // 比較できないため全文が必須）
+  div.appendChild(document.createTextNode(el.value.slice(pos + 1)));
+  document.body.appendChild(div);
+  const ratio =
+    div.scrollHeight > 0 ? el.scrollHeight / div.scrollHeight : 1;
+  el.scrollTop = Math.max(
+    0,
+    marker.offsetTop * ratio - el.clientHeight / 2,
+  );
+  div.remove();
+};
+
 export function ChainPane({
   chain,
   /** ペインを開いたエリア（フォント等はこのエリア単位） */
@@ -28,6 +106,10 @@ export function ChainPane({
   chains,
   onPickChain,
   writeMode,
+  onCaret,
+  onGotoText,
+  onJumpSel,
+  textJump,
   t,
 }: {
   chain: Chain;
@@ -52,6 +134,16 @@ export function ChainPane({
   /** 執筆モード — 選択範囲装飾行・字サイズ欄・エリアリンクを畳む（v0.6。
       字サイズは文書設定の升目仕様が自動決定するため触らせない） */
   writeMode?: boolean;
+  /** 連鎖テキスト ⇄ ページ双方向シンク（執筆モードのみ）。
+      onCaret = テキスト→ビュー（キャレット位置のページへ移動）、
+      onGotoText = ビュー→テキスト（現ページ先頭文字へキャレット）、
+      textJump = App からのジャンプ要求 */
+  onCaret?: (pos: number) => void;
+  onGotoText?: () => void;
+  /** 検索ジャンプも「文」と同じ経路へ — App 側 textJump に
+      乗せて統一（選択範囲 s..e を渡す） */
+  onJumpSel?: (s: number, e: number) => void;
+  textJump?: { s: number; e: number; n: number };
   t: TFunc;
 }) {
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -77,7 +169,34 @@ export function ChainPane({
     setSel({ s: el.selectionStart, e: el.selectionEnd });
     if (el.selectionEnd > el.selectionStart)
       setMarkColor(colorAt(el.selectionStart));
+    // テキスト→ビューシンク — 入力・クリック・カーソル移動で
+    // キャレット位置のページへビューを連れて行く（v0.8）
+    onCaret?.(el.selectionStart);
   };
+
+  // ビュー→テキストシンク — ページ送り側が現ページ先頭文字の
+  // textJump を投げてくる。focus() でキャレット位置へスクロール
+  const lastJump = useRef(0);
+  useLayoutEffect(() => {
+    const el = taRef.current;
+    if (el && textJump && textJump.n !== lastJump.current) {
+      lastJump.current = textJump.n;
+      // まずミラー計測で近似位置へ — その後 selection を設定する。
+      // フォーカス済み要素への selection 変更はブラウザが
+      // キャレットへ正確にスクロールするため、効く環境では
+      // ネイティブ位置が最終決定になる（ミラーは効かない
+      // 環境向けのフォールバック）
+      scrollTaToCaret(el, textJump.s);
+      el.focus();
+      el.selectionStart = textJump.s;
+      el.selectionEnd = textJump.e;
+      el.blur();
+      el.focus();
+      // プログラム的 selection 変更は onSelect を発火しないため
+      // ビューシンクを明示通知（文/検索ジャンプでビューが追従）
+      onCaret?.(el.selectionStart);
+    }
+  }, [textJump]);
 
   const hasSel = sel.e > sel.s;
   const apply = (attrs: Partial<TextAttrs>) =>
@@ -171,22 +290,35 @@ export function ChainPane({
   const pick = (i: number) => {
     const el = taRef.current;
     if (!el || i < 0 || i >= hits.length) return;
-    // 一致を textarea の選択範囲にする（最も安い現在地の可視化）。
-    // ボタンクリックでフォーカスがボタンへ奪われるため focus() を
-    // 戻す — Chrome は focus 時にキャレット位置へスクロールもする
-    el.selectionStart = hits[i];
-    el.selectionEnd = hits[i] + query.length;
-    el.focus();
+    // 「文」と同じジャンプ経路に統一（App 側 textJump）—
+    // 選択範囲の設定とスクロールを一本化して挙動を揃える
+    onJumpSel?.(hits[i], hits[i] + query.length);
+    if (!onJumpSel) {
+      el.selectionStart = hits[i];
+      el.selectionEnd = hits[i] + query.length;
+      scrollTaToCaret(el, hits[i]);
+      el.blur();
+      el.focus();
+    }
     setCurHit(i);
   };
+  // 選択がいずれかの一致上にあるか（入力直後の自動選択状態）
+  const selHitIdx = () =>
+    hits.findIndex((h) => h === (taRef.current?.selectionStart ?? -1));
   const goNext = () => {
     if (!hits.length) return;
+    // ナビ未実行（-/N）かつ選択が一致上にあるなら、それを
+    // 現在地として表示する — 次の一致へ飛ばさない
+    const on = selHitIdx();
+    if (curHit < 0 && on >= 0) return pick(on);
     const pos = taRef.current?.selectionEnd ?? 0;
     const i = hits.findIndex((h) => h >= pos);
     pick(i >= 0 ? i : 0); // 末尾を越えたら先頭へ回る
   };
   const goPrev = () => {
     if (!hits.length) return;
+    const on = selHitIdx();
+    if (curHit < 0 && on >= 0) return pick(on);
     const pos = taRef.current?.selectionStart ?? chain.text.length;
     let i = -1;
     for (let k = hits.length - 1; k >= 0; k--) {
@@ -292,7 +424,11 @@ export function ChainPane({
               }
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') goNext();
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.shiftKey) goPrev();
+                else goNext();
+              }
               if (e.key === 'Escape') setFindOpen(false);
             }}
           />
@@ -330,13 +466,27 @@ export function ChainPane({
               if (e.key === 'Escape') setFindOpen(false);
             }}
           />
-          <button disabled={!hits.length} onClick={replaceOne}>
+          {/* mousedown preventDefault: ボタンにフォーカスが
+              残ると Enter で再発火してしまうため */}
+          <button
+            disabled={!hits.length}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={replaceOne}
+          >
             {t('find.replaceOne')}
           </button>
-          <button disabled={!hits.length} onClick={replaceAll}>
+          <button
+            disabled={!hits.length}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={replaceAll}
+          >
             {t('find.replaceAll')}
           </button>
-          <button title={t('chain.close')} onClick={() => setFindOpen(false)}>
+          <button
+            title={t('chain.close')}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setFindOpen(false)}
+          >
             ×
           </button>
         </div>
@@ -367,6 +517,20 @@ export function ChainPane({
         <button title={t('write.breakTip')} onClick={() => insertBreak('◇')}>
           ◇
         </button>
+        {/* ビュー⇄テキストのシンクボタン（執筆モード） */}
+        {onCaret && (
+          <button
+            title={t('chain.toPage')}
+            onClick={() => onCaret(taRef.current?.selectionStart ?? 0)}
+          >
+            頁
+          </button>
+        )}
+        {onGotoText && (
+          <button title={t('chain.toText')} onClick={onGotoText}>
+            文
+          </button>
+        )}
         <label title={t('write.indentTip')}>
           <input
             type="checkbox"
@@ -378,6 +542,8 @@ export function ChainPane({
         <span className="chain-count">
           {tf(t, 'write.count', total, sheets)}
           {hasSel ? ` · ${tf(t, 'write.sel', selCount)}` : ''}
+          {/* デバッグ: キャレット位置（生 text index・行番号） */}
+          {` · #${sel.s} L${chain.text.slice(0, sel.s).split('\n').length}`}
         </span>
       </div>
       {/* v0.3: 目標字数 + 進捗 — 正準値は字数。枚数入力は ×400 で

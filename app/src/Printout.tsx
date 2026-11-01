@@ -266,6 +266,7 @@ export function Printout({
                       fontStyle: a?.italic ? 'italic' : undefined,
                       textDecoration:
                         a?.underline || a?.link ? 'underline' : undefined,
+                      textEmphasis: a?.boten ? 'sesame' : undefined,
                     },
                     // 印刷は <a> で出す → PDF 書き出しでリンクが生きる
                     link: a?.link,
@@ -361,6 +362,9 @@ export function Printout({
                               r.attrs.underline || r.attrs.link
                                 ? 'underline'
                                 : undefined,
+                            textEmphasis: r.attrs.boten
+                              ? 'sesame'
+                              : undefined,
                           }}
                         >
                           {r.text}
