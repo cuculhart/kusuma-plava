@@ -1497,11 +1497,3 @@ body,
   font-size: 11px;
 }
 .margin-field input { width: 38px; }
-
-/* v0.9: 連鎖ペインの畳み（執筆モード）— ヘッダのみ残す */
-.chain-pane.folded {
-  flex: none;
-}
-.chain-pane.folded > :not(header) {
-  display: none;
-}

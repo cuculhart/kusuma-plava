@@ -21,6 +21,7 @@ export function ChainPane({
   onClearMarks,
   onAreaData,
   onClose,
+  onFold,
   indent,
   onIndent,
   goal,
@@ -40,6 +41,8 @@ export function ChainPane({
   onClearMarks: (s: number, e: number) => void;
   onAreaData: (patch: Partial<TextAreaData>) => void;
   onClose: () => void;
+  /** v0.9: 親ドックの畳み（執筆モードの × 用。未指定時は onClose） */
+  onFold?: () => void;
   /** 字下げ — Enter の段落頭に全角スペースを自動挿入（v0.2） */
   indent: boolean;
   onIndent: (v: boolean) => void;
@@ -58,7 +61,6 @@ export function ChainPane({
   // 選択範囲はボタン押下でフォーカスが外れても保持するため state で記憶
   const [sel, setSel] = useState<{ s: number; e: number }>({ s: 0, e: 0 });
   const [markColor, setMarkColor] = useState('#222222');
-  const [folded, setFolded] = useState(false);
 
 
   // 選択開始位置の実効色（マーク後勝ち → エリア既定へフォールバック）
@@ -244,7 +246,7 @@ export function ChainPane({
   const sheets = (total / 400).toFixed(1);
 
   return (
-    <aside className={folded ? 'chain-pane folded' : 'chain-pane'}>
+    <aside className="chain-pane">
       {/* 複数連鎖の切替タブ（連鎖別字数つき） */}
       {chains && chains.length > 1 && (
         <div className="chain-tabs">
@@ -261,13 +263,11 @@ export function ChainPane({
       )}
       <header>
         <span>{tf(t, 'chain.title', chain.areas.length)}</span>
-        {/* v0.9: 執筆モードでは × は「畳み」— ペイン本体を畳んで
-            文書設定へ領域を返す（選択解除の onClose は組版モード用） */}
+        {/* v0.9: 執筆モードの × は親ドックの畳み（メニューの
+            帯化と同じ）へ繋ぐ。onFold が無ければ従来の onClose */}
         <button
-          onClick={() =>
-            writeMode ? setFolded((v) => !v) : onClose()
-          }
-          title={writeMode ? (folded ? '開く' : '畳む') : t('chain.close')}
+          onClick={() => (writeMode && onFold ? onFold() : onClose())}
+          title={writeMode ? '畳む' : t('chain.close')}
         >
           ×
         </button>

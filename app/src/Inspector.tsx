@@ -314,6 +314,7 @@ export function RightDock({
           onClearMarks={onClearMarks}
           onAreaData={onAreaData}
           onClose={onDeselect}
+          onFold={onToggleDock}
           indent={indent}
           onIndent={onIndent}
           goal={goal}
