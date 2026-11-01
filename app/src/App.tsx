@@ -2226,15 +2226,23 @@ export function App() {
             {Math.round(o.w)}×{Math.round(o.h)}
             mm
           </span>
-          <button
-            title={t('page.insertAfter')}
-            onClick={() => insertBelow(d.index)}
-          >
-            ＋
-          </button>
-          <button title={t('page.delete')} onClick={() => removePage(o.id)}>
-            ×
-          </button>
+          {/* v0.9: ページの追加・削除は執筆モードでは自動管理 */}
+          {!writeMode && (
+            <>
+              <button
+                title={t('page.insertAfter')}
+                onClick={() => insertBelow(d.index)}
+              >
+                ＋
+              </button>
+              <button
+                title={t('page.delete')}
+                onClick={() => removePage(o.id)}
+              >
+                ×
+              </button>
+            </>
+          )}
         </div>
         {/* v0.3: ページ番号 — 文書設定 ON のとき版面下端中央にも出す
             （印刷側 .pnum と同じ位置・同じ数え方） */}
