@@ -21,7 +21,6 @@ export function ChainPane({
   onClearMarks,
   onAreaData,
   onClose,
-  onFold,
   indent,
   onIndent,
   goal,
@@ -41,8 +40,6 @@ export function ChainPane({
   onClearMarks: (s: number, e: number) => void;
   onAreaData: (patch: Partial<TextAreaData>) => void;
   onClose: () => void;
-  /** v0.9: 親ドックの畳み（執筆モードの × 用。未指定時は onClose） */
-  onFold?: () => void;
   /** 字下げ — Enter の段落頭に全角スペースを自動挿入（v0.2） */
   indent: boolean;
   onIndent: (v: boolean) => void;
@@ -263,14 +260,13 @@ export function ChainPane({
       )}
       <header>
         <span>{tf(t, 'chain.title', chain.areas.length)}</span>
-        {/* v0.9: 執筆モードの × は親ドックの畳み（メニューの
-            帯化と同じ）へ繋ぐ。onFold が無ければ従来の onClose */}
-        <button
-          onClick={() => (writeMode && onFold ? onFold() : onClose())}
-          title={writeMode ? '畳む' : t('chain.close')}
-        >
-          ×
-        </button>
+        {/* × は組版モードのみ（選択解除）— 執筆モードは外側の
+            details で縦に畳むので不要 */}
+        {!writeMode && (
+          <button onClick={onClose} title={t('chain.close')}>
+            ×
+          </button>
+        )}
       </header>
       {/* v0.3: 検索・置換バー — この連鎖のテキストだけを対象にする */}
       {findOpen && (

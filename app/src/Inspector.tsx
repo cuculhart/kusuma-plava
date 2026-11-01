@@ -305,25 +305,33 @@ export function RightDock({
     // 文書設定（用紙サイズ等）は畳んだ副セクションで下に置く
     body = chain ? (
       <>
-        <ChainPane
-          chain={chain}
-          areaData={(writeArea?.data as TextAreaData | undefined) ?? null}
-          overflow={chainOverflow}
-          onText={onChainText}
-          onApplyMark={onApplyMark}
-          onClearMarks={onClearMarks}
-          onAreaData={onAreaData}
-          onClose={onDeselect}
-          onFold={onToggleDock}
-          indent={indent}
-          onIndent={onIndent}
-          goal={goal}
-          onGoal={onGoal}
-          chains={chains}
-          onPickChain={onSelectChain}
-          writeMode={writeMode}
-          t={t}
-        />
+        {/* v0.9: 連鎖テキストは文書設定と同じ縦方向の
+            details 折りたたみ（既定は開いた状態） */}
+        <details className="doc-settings" open>
+          <summary>
+            {tf(t, 'chain.title', chain.areas.length)}
+          </summary>
+          <ChainPane
+            chain={chain}
+            areaData={
+              (writeArea?.data as TextAreaData | undefined) ?? null
+            }
+            overflow={chainOverflow}
+            onText={onChainText}
+            onApplyMark={onApplyMark}
+            onClearMarks={onClearMarks}
+            onAreaData={onAreaData}
+            onClose={onDeselect}
+            indent={indent}
+            onIndent={onIndent}
+            goal={goal}
+            onGoal={onGoal}
+            chains={chains}
+            onPickChain={onSelectChain}
+            writeMode={writeMode}
+            t={t}
+          />
+        </details>
         <details className="doc-settings">
           <summary>{t('doc.settings')}</summary>
           <DocProps {...docProps} t={t} />
