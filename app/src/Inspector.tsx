@@ -13,13 +13,39 @@ import type { Chain, PaperSize, TextAttrs } from 'inimbal';
 import type { TFunc } from './i18n';
 import { tf } from './i18n';
 import { ChainPane } from './ChainPane';
-import type { GenkoGrid, ImageData, TextAreaData } from './types';
+import type {
+  GenkoGrid,
+  ImageData,
+  PageMargins,
+  TextAreaData,
+} from './types';
 
-// v0.9: 升目仕様プリセット — id は i18n の doc.preset.<id> キーに対応
-const GENKO_PRESETS: { id: string; cells: number; cols: number }[] = [
-  { id: 'g400', cells: 20, cols: 20 },
-  { id: 'bunko', cells: 42, cols: 16 },
-  { id: 'tanko', cells: 43, cols: 17 },
+// v0.9: 升目仕様プリセット — id は i18n の doc.preset.<id> キーに対応。
+// margins は判型の実務的な推奨余白（天・地・ノド・小口・mm）
+const GENKO_PRESETS: {
+  id: string;
+  cells: number;
+  cols: number;
+  margins: PageMargins;
+}[] = [
+  {
+    id: 'g400',
+    cells: 20,
+    cols: 20,
+    margins: { top: 20, bottom: 20, inside: 20, outside: 20 },
+  },
+  {
+    id: 'bunko',
+    cells: 42,
+    cols: 16,
+    margins: { top: 14, bottom: 12, inside: 16, outside: 11 },
+  },
+  {
+    id: 'tanko',
+    cells: 43,
+    cols: 17,
+    margins: { top: 18, bottom: 15, inside: 19, outside: 13 },
+  },
 ];
 import { FONT_SIZES_MM, IMG_KIND, MM_PX, TEXT_KIND } from './types';
 import { fontOptions, useSysFonts } from './useSysFonts';
@@ -248,9 +274,9 @@ export function RightDock({
     /** v0.3: 升目プリセットで適用される字サイズ（mm）。
         適用先エリアが無い・算出不能なら null（ボタン無効） */
     fit400fs: number | null;
-    /** v0.9: 版面マージン（mm・四方共通） */
-    marginMm: number;
-    onMarginMm: (mm: number) => void;
+    /** v0.9: 版面マージン（天・地・ノド・小口・mm） */
+    margins: PageMargins;
+    onMargins: (m: PageMargins) => void;
     /** v0.5: 枠と字サイズを文書設定の升目仕様に合わせる */
     onFit400: () => void;
   };
@@ -786,8 +812,8 @@ function DocProps({
   onGridAlpha,
   hashira,
   onHashira,
-  marginMm,
-  onMarginMm,
+  margins,
+  onMargins,
   hanmenCells,
   fit400fs,
   onFit400,
@@ -820,8 +846,8 @@ function DocProps({
   onGridAlpha: (v: number) => void;
   hashira: string;
   onHashira: (s: string) => void;
-  marginMm: number;
-  onMarginMm: (mm: number) => void;
+  margins: PageMargins;
+  onMargins: (m: PageMargins) => void;
   hanmenCells: { v: number; h: number };
   fit400fs: number | null;
   onFit400: () => void;
@@ -888,21 +914,35 @@ function DocProps({
             onChange={(e) => onHashira(e.currentTarget.value)}
           />
         </label>
-        {/* v0.9: 版面マージン — 升目枠の字サイズと版面内寸に効く */}
-        <label>
-          {t('doc.margin')}
-          <input
-            type="number"
-            min={0}
-            max={60}
-            step={0.5}
-            value={marginMm}
-            onChange={(e) => {
-              const v = Number(e.currentTarget.value);
-              if (Number.isFinite(v)) onMarginMm(v);
-            }}
-          />
-        </label>
+        {/* v0.9: 版面マージン — 天・地・ノド・小口（mm）。
+            ノドは綴じ側でページの左右へ自動反転する */}
+        <div className="margin-row">
+          <span className="dim">{t('doc.margin')}</span>
+          {(
+            [
+              ['top', 'doc.margin.t'],
+              ['bottom', 'doc.margin.b'],
+              ['inside', 'doc.margin.i'],
+              ['outside', 'doc.margin.o'],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} className="margin-field">
+              {t(label)}
+              <input
+                type="number"
+                min={0}
+                max={80}
+                step={0.5}
+                value={margins[key]}
+                onChange={(e) => {
+                  const v = Number(e.currentTarget.value);
+                  if (Number.isFinite(v))
+                    onMargins({ ...margins, [key]: v });
+                }}
+              />
+            </label>
+          ))}
+        </div>
         <label>
           {t('doc.paper')}
           <select
@@ -942,7 +982,11 @@ function DocProps({
               const p = GENKO_PRESETS.find(
                 (q) => q.id === e.currentTarget.value,
               );
-              if (p) onGenko({ cells: p.cells, cols: p.cols });
+              if (p) {
+                onGenko({ cells: p.cells, cols: p.cols });
+                // 判型の推奨余白も適用（後で個別に調整可能）
+                onMargins({ ...p.margins });
+              }
             }}
           >
             {GENKO_PRESETS.map((p) => (

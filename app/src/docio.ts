@@ -10,9 +10,35 @@ import {
   IMG_KIND,
   type GenkoGrid,
   type ImageData,
+  type PageMargins,
 } from './types';
 
 export const ARCHIVE_FORMAT = 'silim-murlun/1';
+
+const okMm = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 80;
+
+/** 版面マージンの検証 — 新形式 margins（天地・ノド・小口）を優先、
+    旧形式 marginMm（四方共通）は四辺へ展開して引き継ぐ */
+function unpackMargins(doc: ArchiveDoc): PageMargins | undefined {
+  const m = doc.margins;
+  if (
+    m &&
+    okMm(m.top) &&
+    okMm(m.bottom) &&
+    okMm(m.inside) &&
+    okMm(m.outside)
+  )
+    return {
+      top: m.top,
+      bottom: m.bottom,
+      inside: m.inside,
+      outside: m.outside,
+    };
+  const u = doc.marginMm;
+  if (okMm(u)) return { top: u, bottom: u, inside: u, outside: u };
+  return undefined;
+}
 export const ARCHIVE_EXT = '.slm';
 
 interface ArchiveDoc {
@@ -43,7 +69,9 @@ interface ArchiveDoc {
   gridAlpha?: number;
   /** 柱 — 天余白へ出す走り書き（v0.7。欠落・空=出さない） */
   hashira?: string;
-  /** v0.9: 版面マージン（mm・四方共通）。欠落=20mm既定 */
+  /** v0.9: 版面マージン（天・地・ノド・小口・mm）。欠落=20mm既定 */
+  margins?: PageMargins;
+  /** 旧フィールド — 四方共通マージン。margins への移行用 */
   marginMm?: number;
 }
 
@@ -95,7 +123,7 @@ export function packArchive(input: {
   gridColor?: string;
   gridAlpha?: number;
   hashira?: string;
-  marginMm?: number;
+  margins?: PageMargins;
 }): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   let imgN = 0;
@@ -127,7 +155,7 @@ export function packArchive(input: {
     gridAlpha: input.gridAlpha,
     // 空文字は書き出さない（unpack 側は欠落=空として畳む）
     hashira: input.hashira || undefined,
-    marginMm: input.marginMm,
+    margins: input.margins,
   };
   files['doc.json'] = strToU8(JSON.stringify(doc));
   return zipSync(files);
@@ -152,7 +180,7 @@ export function unpackArchive(bytes: Uint8Array): {
   gridAlpha: number;
   /** v0.7: 柱 — 天余白へ出す走り書き。欠落・非文字列は空（出さない） */
   hashira: string;
-  marginMm?: number;
+  margins?: PageMargins;
 } {
   const files = unzipSync(bytes);
   const raw = files['doc.json'];
@@ -212,12 +240,6 @@ export function unpackArchive(bytes: Uint8Array): {
         : 1,
     // v0.7: 柱 — 文字列以外（旧書庫の欠落含む）は空 = 出さない
     hashira: typeof doc.hashira === 'string' ? doc.hashira : '',
-    marginMm:
-      typeof doc.marginMm === 'number' &&
-      Number.isFinite(doc.marginMm) &&
-      doc.marginMm >= 0 &&
-      doc.marginMm <= 60
-        ? doc.marginMm
-        : undefined,
+    margins: unpackMargins(doc),
   };
 }

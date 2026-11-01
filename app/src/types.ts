@@ -24,6 +24,15 @@ export const TEXT_PAD_MM = 1;
 export const LINE_HEIGHT = 1.4;
 
 /** 升目グリッド枠の升目数 — cells = 1段の字数（縦）、cols = 段数（横） */
+/** v0.9: 版面マージン — 天・地・ノド・小口（mm）。ノドは綴じ側で
+    ページの左右で反転するため inside/outside で保持する */
+export interface PageMargins {
+  top: number;
+  bottom: number;
+  inside: number;
+  outside: number;
+}
+
 export interface GenkoGrid {
   cells: number;
   cols: number;

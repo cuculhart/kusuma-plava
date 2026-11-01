@@ -1472,3 +1472,20 @@ body,
     page-break-after: auto;
   }
 }
+
+/* v0.9: 版面マージン（天・地・ノド・小口）の4入力行 */
+.margin-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+.margin-row .dim { white-space: nowrap; }
+.margin-field {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+}
+.margin-field input { width: 38px; }
