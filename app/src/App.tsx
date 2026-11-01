@@ -974,7 +974,23 @@ export function App() {
           curAxis(),
           s.paperColor,
         ),
-        ...uncanon(s.objects, s.model.spec),
+        ...uncanon(s.objects, s.model.spec).map((o) => {
+          // v0.9: 復元オブジェクトの塗りを現在の設定へ正規化
+          // （旧書庫の枠と新版の枠で背景色がずれるのを防ぐ）
+          const d = o.data as TextAreaData | undefined;
+          return d?.genko || d?.auto
+            ? {
+                ...o,
+                style: {
+                  ...(o.style ?? {}),
+                  fill: gridLineCss(
+                    s.gridBg ?? DEFAULT_GRID_BG,
+                    (s.gridBgAlpha ?? 0) / 100,
+                  ),
+                },
+              }
+            : o;
+        }),
       ],
     });
     syncSnapExtra(engine, s.model, curAxis());
@@ -1316,8 +1332,37 @@ export function App() {
       return { ...o, group: g };
     });
     groupSeqRef.current = gn + 1;
-    // 書庫のオブジェクトは正準系 'y' — 現在のモード軸へ載せ替える
-    commitPages(r.model, uncanon(objects, r.model.spec));
+    // 書庫のオブジェクトは正準系 'y' — 現在のモード軸へ載せ替え、
+    // 塗りは復元した設定値で正規化する（v0.9）
+    commitPages(
+      r.model,
+      uncanon(objects, r.model.spec).map((o) => {
+        if (o.kind === PAGE_KIND)
+          return {
+            ...o,
+            style: {
+              ...(o.style ?? {}),
+              fill: gridLineCss(
+                r.paperColor ?? '#ffffff',
+                (r.pageOpacity ?? 75) / 100,
+              ),
+            },
+          };
+        const d = o.data as TextAreaData | undefined;
+        return d?.genko || d?.auto
+          ? {
+              ...o,
+              style: {
+                ...(o.style ?? {}),
+                fill: gridLineCss(
+                  r.gridBg ?? DEFAULT_GRID_BG,
+                  (r.gridBgAlpha ?? 0) / 100,
+                ),
+              },
+            }
+          : o;
+      }),
+    );
     setChains(r.chains);
     setWriteChainId(null);
     setFooter(r.footer);
