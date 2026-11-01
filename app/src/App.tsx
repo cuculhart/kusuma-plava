@@ -2137,11 +2137,13 @@ export function App() {
       // ない spec や連鎖未接続）— 打ち切らないと無限ループ
       if (wcOverflow === wcLastOv.current) return;
       wcLastOv.current = wcOverflow;
-      appendPage();
+      // 同期で呼ぶと履歴スナップ等の setState と連鎖して
+      // update depth 超過になる — 別タスク化して切り離す
+      setTimeout(appendPage, 0);
       return;
     }
     wcLastOv.current = '';
-    if (wcEmptyTail) removePage(wcEmptyTail);
+    if (wcEmptyTail) setTimeout(() => removePage(wcEmptyTail), 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wcOverflow, wcEmptyTail]);
 
