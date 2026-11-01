@@ -17,7 +17,7 @@ const ja = {
   'menu.undo': '取り消し',
   'menu.redo': 'やり直し',
   'menu.ruler': 'ルーラー',
-  'menu.fit': '全体表示',
+  'menu.fit': '全',
   'menu.fitTip': 'ページが収まる倍率にズーム（執筆モードは用紙の縦でフィット）',
   'menu.link': 'リンクモード',
   'menu.linkTip': '末尾→先頭の2エリアを接続',
@@ -41,12 +41,12 @@ const ja = {
   'menu.mode': '執筆モード',
   'menu.modeTip':
     '執筆 ⇄ 組版の切替 — 執筆では左に本文ペイン、レイアウト編集は畳む',
-  'menu.exportText': 'テキスト出力',
+  'menu.exportText': '出',
   'menu.exportTextTip':
     '連鎖テキストを .txt で書き出す（糖衣は ｜《》 へ正規化）',
 
   // 連鎖ペイン
-  'chain.title': '連鎖テキスト（$1エリア）',
+  'chain.title': '連鎖テキスト',
   'chain.close': '閉じる',
   'chain.placeholder': 'ここに連鎖テキスト全体を入力…',
   'chain.overflow': 'あふれ $1字 「$2…」',
