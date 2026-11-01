@@ -2124,13 +2124,19 @@ export function App() {
     });
     return allEmpty ? last.id : null;
   })();
+  const wcLastOv = useRef('');
   useEffect(() => {
     // あふれが空白だけなら追加しない — 追加すると空ページを
     // 削る処理と無限ループになる
     if (wcOverflow.length > 0 && wcOverflow.trim() !== '') {
+      // 追加してもあふれが減らない場合は吸収不能（枠が組め
+      // ない spec や連鎖未接続）— 打ち切らないと無限ループ
+      if (wcOverflow === wcLastOv.current) return;
+      wcLastOv.current = wcOverflow;
       appendPage();
       return;
     }
+    wcLastOv.current = '';
     if (wcEmptyTail) removePage(wcEmptyTail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wcOverflow, wcEmptyTail]);
