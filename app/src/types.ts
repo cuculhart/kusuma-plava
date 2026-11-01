@@ -69,7 +69,7 @@ export interface TextAreaData {
       cells×cols の原稿用紙枠。枠の内寸はちょうど升目分で、用紙変更時に
       字サイズ・中央寄せ位置を再計算して追従する（refitWritingAreas 参照） */
   genko?: GenkoGrid;
-  /** 段組の段番号 — 右段=0 から左へ増える（v0.6。欠落=単段の旧枠） */
+  /** 段組の段番号 — 上段=0 から下へ増える（v0.6。欠落=単段の旧枠） */
   col?: number;
 }
 

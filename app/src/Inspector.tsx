@@ -1053,7 +1053,7 @@ function DocProps({
             {t('doc.genkoRows')}
           </span>
         </div>
-        {/* v0.6: 段組 — 段数と段間（右段→左段へ流れる。
+        {/* v0.6: 段組 — 段数と段間（上段→下段へ流れる。
             cells/cols は「1段あたり」の升目仕様。
             1行に詰めるとペインをはみ出すので別行に置く */}
         <div className="ins-row">

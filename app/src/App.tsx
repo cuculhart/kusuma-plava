@@ -204,13 +204,16 @@ function genkoFontSize(
   const { bw, bh } = hanmenBox(spec, margins);
   const n = g.columns ?? 1;
   const gap = g.gapMm ?? 7;
-  const colW = (bw - (n - 1) * gap) / n;
-  const fs = Math.min(bh / g.cells, colW / (g.cols * (1 + RUBY_LANE_RATIO)));
+  // 縦書きの段組は上段→下段の帯分割 — 帯の高さで字数、
+  // 版面幅で段あたり列数が決まる
+  const bandH = (bh - (n - 1) * gap) / n;
+  const fs = Math.min(bandH / g.cells, bw / (g.cols * (1 + RUBY_LANE_RATIO)));
   return Number.isFinite(fs) && fs > 0 ? fs : null;
 }
 
-/** slot ページの升目枠を段数分すべて返す（右→左の順 = col 0..n-1）。
-    版面箱を段間 gap で等分し、各段箱の中央に升目枠を寄せる */
+/** slot ページの升目枠を段数分すべて返す（上段→下段 = col 0..n-1）。
+    縦書きの段組は版面箱を水平な帯へ段間 gap で等分し、
+    各帯の中央に升目枠を寄せる（文中は帯内で右→左へ流れる） */
 function genkoFrames(
   spec: PaperSpec,
   slot: number,
@@ -228,13 +231,13 @@ function genkoFrames(
   const bh = p.h - i.t - i.b;
   const w = g.cols * fs * (1 + RUBY_LANE_RATIO) + 2 * TEXT_PAD_MM;
   const h = g.cells * fs + 2 * TEXT_PAD_MM;
-  const colW = (bw - (n - 1) * gap) / n;
+  const bandH = (bh - (n - 1) * gap) / n;
   return Array.from({ length: n }, (_, col) => {
-    // col 0 = 右端の段 — 版面箱の右から積む（縦書きの段順）
-    const cx = p.x + i.l + bw - (col + 1) * colW - col * gap;
+    // col 0 = 上段 — 版面箱の上から帯を積む（縦書きの段順）
+    const cy = p.y + i.t + col * (bandH + gap);
     return {
-      x: cx + (colW - w) / 2,
-      y: p.y + i.t + (bh - h) / 2,
+      x: p.x + i.l + (bw - w) / 2,
+      y: cy + (bandH - h) / 2,
       w,
       h,
       fontSize: fs,
@@ -826,7 +829,7 @@ export function App() {
     });
     syncSnapExtra(engine, next, curAxis());
   };
-  // v0.6: slot ページの段組升目枠を右→左（col 0..n-1）で生成
+  // v0.6: slot ページの段組升目枠を上→下（col 0..n-1）で生成
   const genkoAreaObjs = (
     spec: PaperSpec,
     slot: number,
@@ -2280,7 +2283,7 @@ export function App() {
         data: { ...d, fontSize: f.fontSize, genko: { ...g } },
       };
     });
-    // v0.6: 段数の変更 — 各ページの genko 枠を右→左で col 昇順に
+    // v0.6: 段数の変更 — 各ページの genko 枠を上→下で col 昇順に
     // 揃え、足りない段は生成・多い段は削除して連鎖を貼り直す
     const n = Math.max(1, Math.min(3, Math.round(g.columns ?? 1)));
     const dropIds = new Set<string>();
@@ -2300,7 +2303,7 @@ export function App() {
             cy < r.y + r.h
           );
         })
-        .sort((a, b) => b.x - a.x); // 右→左 = col 0..k-1
+        .sort((a, b) => a.y - b.y); // 上→下 = col 0..k-1
       if (!onPage.length) continue;
       onPage.forEach((o, i) => {
         if (i < n) return; // 残る段は先の refit で新 rect 済み
