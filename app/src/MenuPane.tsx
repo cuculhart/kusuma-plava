@@ -130,7 +130,7 @@ export function MenuPane({
         title: t('menu.saveTip'),
         enIc: 'S',
       })}
-      {item('文', t('menu.exportText'), onExportText, {
+      {item('出', t('menu.exportText'), onExportText, {
         title: t('menu.exportTextTip'),
         enIc: 'T',
       })}
@@ -141,7 +141,7 @@ export function MenuPane({
         item('戻', t('menu.redo'), onRedo, { title: 'Ctrl+Y', enIc: '↷' })}
       {!writeMode &&
         item('尺', t('menu.ruler'), onRuler, { on: rulerOn, enIc: 'R' })}
-      {item('枠', t('menu.fit'), onFit, {
+      {item('全', t('menu.fit'), onFit, {
         title: t('menu.fitTip'),
         enIc: 'F',
       })}

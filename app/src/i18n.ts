@@ -17,7 +17,7 @@ const ja = {
   'menu.undo': '取り消し',
   'menu.redo': 'やり直し',
   'menu.ruler': 'ルーラー',
-  'menu.fit': '全',
+  'menu.fit': 'ページ全体表示',
   'menu.fitTip': 'ページが収まる倍率にズーム（執筆モードは用紙の縦でフィット）',
   'menu.spread': '見開き',
   'menu.spreadTip': '見開き表示（偶数=左・奇数=右の右綴じ）',
@@ -43,7 +43,7 @@ const ja = {
   'menu.mode': '執筆モード',
   'menu.modeTip':
     '執筆 ⇄ 組版の切替 — 執筆では左に本文ペイン、レイアウト編集は畳む',
-  'menu.exportText': '出',
+  'menu.exportText': 'テキスト出力',
   'menu.exportTextTip':
     '連鎖テキストを .txt で書き出す（糖衣は ｜《》 へ正規化）',
 
