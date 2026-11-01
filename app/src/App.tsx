@@ -576,6 +576,7 @@ export function App() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const openFileRef = useRef<HTMLInputElement>(null);
+  const textFileRef = useRef<HTMLInputElement>(null);
   const chainsRef = useRef(chains);
   chainsRef.current = chains;
   const linkModeRef = useRef(linkMode);
@@ -2753,6 +2754,7 @@ export function App() {
           onOpen={() => openFileRef.current?.click()}
           onSave={() => setSaveDlg(docTitle || 'document')}
           onExportText={exportText}
+          onImportText={() => textFileRef.current?.click()}
           onUndo={undo}
           onRedo={redo}
           canUndo={histRef.current.past.length > 0}
@@ -3375,6 +3377,29 @@ export function App() {
         accept="image/*"
         style={{ display: 'none' }}
         onChange={onPickFile}
+      />
+      {/* v0.7: テキスト取り込み — .txt を連鎖テキストへ
+          読み込む（長文はコピペだとハングするため） */}
+      <input
+        ref={textFileRef}
+        type="file"
+        accept=".txt,.text,text/plain"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.currentTarget.files?.[0];
+          e.currentTarget.value = '';
+          if (!f) return;
+          f.text().then((text) => {
+            const target = writeChain ?? chains[0];
+            if (!target) return;
+            setChains((cs) =>
+              cs.map((c) =>
+                c.id === target.id ? { ...c, text } : c,
+              ),
+            );
+            flash(tf(t, 'hint.imported', f.name));
+          });
+        }}
       />
       <input
         ref={openFileRef}

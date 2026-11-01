@@ -22,6 +22,7 @@ export function MenuPane({
   onOpen,
   onSave,
   onExportText,
+  onImportText,
   onUndo,
   onRedo,
   canUndo,
@@ -54,6 +55,8 @@ export function MenuPane({
   onSave: () => void;
   /** 投稿用テキスト出力（v0.3）— 連鎖テキストを .txt で書き出す */
   onExportText: () => void;
+  /** v0.7: .txt を連鎖テキストへ読み込む */
+  onImportText: () => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -130,6 +133,7 @@ export function MenuPane({
         title: t('menu.saveTip'),
         enIc: 'S',
       })}
+      {item('読', t('menu.importText'), onImportText, { enIc: 'T' })}
       {item('出', t('menu.exportText'), onExportText, {
         title: t('menu.exportTextTip'),
         enIc: 'T',

@@ -43,6 +43,7 @@ const ja = {
   'menu.mode': '執筆モード',
   'menu.modeTip':
     '執筆 ⇄ 組版の切替 — 執筆では左に本文ペイン、レイアウト編集は畳む',
+  'menu.importText': 'テキスト読込',
   'menu.exportText': 'テキスト出力',
   'menu.exportTextTip':
     '連鎖テキストを .txt で書き出す（糖衣は ｜《》 へ正規化）',
@@ -82,6 +83,7 @@ const ja = {
   'status.draftTip': '自動保存した下書きの時刻',
   'hint.draftRestored': '下書きを復元しました',
   'hint.exported': 'テキストを書き出しました',
+  'hint.imported': '$1 を読み込みました',
   // 目標字数（v0.3）
   'write.goal': '目標',
   'write.goalChars': '字',
@@ -282,6 +284,7 @@ const en: Record<keyof typeof ja, string> = {
   'menu.mode': 'Write mode',
   'menu.modeTip':
     'Toggle writing / layout — writing puts the text pane on the left and folds layout editing',
+  'menu.importText': 'Import text',
   'menu.exportText': 'Export text',
   'menu.exportTextTip':
     'Export chain text as .txt (sugar normalized to ｜《》)',
@@ -320,6 +323,7 @@ const en: Record<keyof typeof ja, string> = {
   'status.draftTip': 'Time of the autosaved draft',
   'hint.draftRestored': 'Draft restored',
   'hint.exported': 'Text exported',
+  'hint.imported': '$1 imported',
   'write.goal': 'Goal',
   'write.goalChars': 'chars',
   'write.goalCharsTip': 'Target character count (0 = unset)',
