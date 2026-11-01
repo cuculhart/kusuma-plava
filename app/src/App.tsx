@@ -846,7 +846,7 @@ export function App() {
       h: f.h,
       style: {
         stroke: 'rgba(90,110,140,0.4)',
-        fill: gridLineCss(gridBg, gridBgAlpha),
+        fill: gridLineCss(gridBg, gridBgAlpha / 100),
       },
       data: {
         ...DEFAULT_TEXT_DATA,
@@ -1283,7 +1283,7 @@ export function App() {
   // v0.9: 升目マスの背景色 → 升目枠オブジェクトの fill を即時反映
   // （data.genko を持つ枠のみ。手動で色を変えた枠も文書設定へ戻る）
   useEffect(() => {
-    const fill = gridLineCss(gridBg, gridBgAlpha);
+    const fill = gridLineCss(gridBg, gridBgAlpha / 100);
     engine.setDoc({
       ...engine.doc,
       objects: engine.doc.objects.map((o) => {
