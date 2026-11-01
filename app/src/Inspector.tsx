@@ -305,33 +305,29 @@ export function RightDock({
     // 文書設定（用紙サイズ等）は畳んだ副セクションで下に置く
     body = chain ? (
       <>
-        {/* v0.9: 連鎖テキストは文書設定と同じ縦方向の
-            details 折りたたみ（既定は開いた状態） */}
-        <details className="doc-settings chain-details" open>
-          <summary>
-            {tf(t, 'chain.title', chain.areas.length)}
-          </summary>
-          <ChainPane
-            chain={chain}
-            areaData={
-              (writeArea?.data as TextAreaData | undefined) ?? null
-            }
-            overflow={chainOverflow}
-            onText={onChainText}
-            onApplyMark={onApplyMark}
-            onClearMarks={onClearMarks}
-            onAreaData={onAreaData}
-            onClose={onDeselect}
-            indent={indent}
-            onIndent={onIndent}
-            goal={goal}
-            onGoal={onGoal}
-            chains={chains}
-            onPickChain={onSelectChain}
-            writeMode={writeMode}
-            t={t}
-          />
-        </details>
+        {/* v0.9: 連鎖テキストは主入力欄 — details に入れず
+            常時展開・残り高さを全部使う。文書設定は別グループ
+            として下に畳める */}
+        <ChainPane
+          chain={chain}
+          areaData={
+            (writeArea?.data as TextAreaData | undefined) ?? null
+          }
+          overflow={chainOverflow}
+          onText={onChainText}
+          onApplyMark={onApplyMark}
+          onClearMarks={onClearMarks}
+          onAreaData={onAreaData}
+          onClose={onDeselect}
+          indent={indent}
+          onIndent={onIndent}
+          goal={goal}
+          onGoal={onGoal}
+          chains={chains}
+          onPickChain={onSelectChain}
+          writeMode={writeMode}
+          t={t}
+        />
         <details className="doc-settings">
           <summary>{t('doc.settings')}</summary>
           <DocProps {...docProps} t={t} />
