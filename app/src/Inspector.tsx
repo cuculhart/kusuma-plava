@@ -255,6 +255,9 @@ export function RightDock({
         したエリアの個別書体は上書きしない */
     font: string;
     onFont: (s: string) => void;
+    /** v0.9: 文書既定の文字色 — 本文全体へ伝播 */
+    docColor: string;
+    onDocColor: (c: string) => void;
     /** v0.3: ページ番号（ノンブル）を印刷に出すか */
     pageNum: boolean;
     onPageNum: (on: boolean) => void;
@@ -805,6 +808,8 @@ function DocProps({
   onPaperColor,
   font,
   onFont,
+  docColor,
+  onDocColor,
   pageNum,
   onPageNum,
   gridPrint,
@@ -845,6 +850,8 @@ function DocProps({
   onPaperColor: (c: string) => void;
   font: string;
   onFont: (s: string) => void;
+  docColor: string;
+  onDocColor: (c: string) => void;
   pageNum: boolean;
   onPageNum: (on: boolean) => void;
   gridPrint: boolean;
@@ -1132,6 +1139,12 @@ function DocProps({
         <label>
           {t('doc.font')}
           <FontPick value={font} onPick={onFont} t={t} />
+          {t('doc.color')}
+          <input
+            type="color"
+            value={docColor}
+            onChange={(e) => onDocColor(e.currentTarget.value)}
+          />
         </label>
       </div>
       <footer className="hint">{t('doc.hint')}</footer>

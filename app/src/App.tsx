@@ -430,6 +430,9 @@ export function App() {
   const dirtyRef = useRef(false);
   const applyingRef = useRef(false);
   const [docFont, setDocFont] = useState(DEFAULT_FONT_FAMILY);
+  // v0.9: 文書既定の文字色 — 文書設定。既定フォントと同じく
+  // 本文全体へ伝播する（ダークテーマで白系へ一括変更する用途）
+  const [docColor, setDocColor] = useState('#222222');
   // v0.2: 執筆/組版モード — 既定は執筆（レイアウト編集は組版で開放）。
   // localStorage 'kusuma-mode' に永続化
   const [writeMode, setWriteMode] = useState(
@@ -486,6 +489,7 @@ export function App() {
     pageOpacity: number;
     paperColor: string;
     docFont: string;
+    docColor: string;
     pageNum: boolean;
     gridPrint: boolean;
     genko: GenkoGrid;
@@ -947,6 +951,7 @@ export function App() {
     pageOpacity,
     paperColor,
     docFont,
+    docColor,
     pageNum,
     gridPrint,
     genko,
@@ -979,6 +984,7 @@ export function App() {
     setPageOpacity(s.pageOpacity);
     setPaperColor(s.paperColor);
     setDocFont(s.docFont);
+    setDocColor(s.docColor);
     setPageNum(s.pageNum);
     setGridPrint(s.gridPrint);
     setGenko(s.genko);
@@ -1027,7 +1033,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -1058,6 +1064,7 @@ export function App() {
           pageOpacity: 75,
           paperColor: '#ffffff',
           docFont: DEFAULT_FONT_FAMILY,
+          docColor: '#222222',
           pageNum: true,
           gridPrint: true,
           genko: { ...GENKO_GRID },
@@ -1078,6 +1085,7 @@ export function App() {
           pageOpacity: r.pageOpacity,
           paperColor: r.paperColor,
           docFont: r.docFont ?? DEFAULT_FONT_FAMILY,
+          docColor: r.docColor ?? '#222222',
           pageNum: r.pageNum,
           gridPrint: r.gridPrint,
           genko: r.genko ?? { ...GENKO_GRID },
@@ -1119,6 +1127,7 @@ export function App() {
           pageOpacity,
           paperColor,
           docFont,
+          docColor,
           pageNum,
           gridPrint,
           genko,
@@ -1138,7 +1147,7 @@ export function App() {
     }, 1500);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor]);
 
   // v0.4: 執筆モードのホイール横送り — ページは右→左に並ぶので
   // ホイール（deltaY やトラックパッド deltaX）は横パンへ向ける。
@@ -1234,6 +1243,7 @@ export function App() {
     setPageOpacity(75);
     setPaperColor('#ffffff');
     setDocFont(DEFAULT_FONT_FAMILY);
+    setDocColor('#222222');
     setPageNum(true);
     setGridPrint(true);
     setGenko({ ...GENKO_GRID });
@@ -1260,6 +1270,7 @@ export function App() {
       pageOpacity,
       paperColor,
       docFont,
+      docColor,
       pageNum,
       gridPrint,
       genko,
@@ -1313,6 +1324,7 @@ export function App() {
     setPageOpacity(r.pageOpacity);
     setPaperColor(r.paperColor ?? '#ffffff');
     setDocFont(r.docFont ?? DEFAULT_FONT_FAMILY);
+    setDocColor(r.docColor ?? '#222222');
     setPageNum(r.pageNum);
     setGridPrint(r.gridPrint);
     // v0.5: 升目仕様 — 旧書庫・不正値は 20×20 既定へ
@@ -1600,6 +1612,24 @@ export function App() {
         return {
           ...o,
           data: { ...DEFAULT_TEXT_DATA, ...d, fontFamily: font },
+        };
+      }),
+    });
+  };
+
+  // v0.9: 文書既定の文字色 — applyDocFont と同じ伝播規則
+  // （auto/genko + 執筆モードの全エリアへ即時反映・.slm へ保存）
+  const applyDocColor = (color: string) => {
+    setDocColor(color);
+    engine.setDoc({
+      ...engine.doc,
+      objects: engine.doc.objects.map((o) => {
+        if (o.kind !== TEXT_KIND) return o;
+        const d = o.data as TextAreaData | undefined;
+        if (!(d?.auto || d?.genko || writeMode)) return o;
+        return {
+          ...o,
+          data: { ...DEFAULT_TEXT_DATA, ...d, color },
         };
       }),
     });
@@ -2901,21 +2931,10 @@ export function App() {
             )
           }
           onAreaData={(patch) => {
-            // v0.9: 執筆モードの文字色は本文全体へ伝播（ダーク
-            // テーマで白系へ一括変更する用途。1連鎖が複数頁に
-            // 跨るのに先頭エリアだけ変えるのは誤適用のもと）
+            // v0.9: 執筆モードの文字色は文書既定の文字色として
+            // 本文全体へ伝播（applyDocColor — 保存にも載る）
             if (writeMode && patch.color !== undefined) {
-              engine.setDoc({
-                ...engine.doc,
-                objects: engine.doc.objects.map((o) => {
-                  if (o.kind !== TEXT_KIND) return o;
-                  const d = o.data as TextAreaData | undefined;
-                  return {
-                    ...o,
-                    data: { ...DEFAULT_TEXT_DATA, ...d, ...patch },
-                  };
-                }),
-              });
+              applyDocColor(patch.color);
               return;
             }
             // 執筆モードはキャンバス非選択なので先頭エリアを対象にする
@@ -2987,6 +3006,8 @@ export function App() {
             onPaperColor: setPaperColor,
             font: docFont,
             onFont: applyDocFont,
+            docColor,
+            onDocColor: applyDocColor,
             pageNum,
             onPageNum: setPageNum,
             gridPrint,

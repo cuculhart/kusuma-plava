@@ -56,6 +56,7 @@ interface ArchiveDoc {
   footer: boolean;
   pageOpacity: number;
   docFont?: string;
+  docColor?: string;
   /** ページ番号（ノンブル）を印刷に出すか（v0.3。欠落=false） */
   pageNum?: boolean;
   /** 升目を印刷に出すか（v0.3。欠落=true — 旧書庫は WYSIWYG 印刷だった） */
@@ -123,6 +124,7 @@ export function packArchive(input: {
   createdAt: string;
   pageOpacity: number;
   docFont?: string;
+  docColor?: string;
   pageNum?: boolean;
   gridPrint?: boolean;
   genko?: GenkoGrid;
@@ -157,6 +159,7 @@ export function packArchive(input: {
     footer: input.footer,
     pageOpacity: input.pageOpacity,
     docFont: input.docFont,
+    docColor: input.docColor,
     pageNum: input.pageNum,
     gridPrint: input.gridPrint,
     genko: input.genko,
@@ -183,6 +186,7 @@ export function unpackArchive(bytes: Uint8Array): {
   createdAt: string;
   pageOpacity: number;
   docFont?: string;
+  docColor?: string;
   pageNum: boolean;
   gridPrint: boolean;
   /** v0.5: 升目仕様。欠落・不正値は undefined（呼び出し側が 20×20 へ畳む） */
@@ -227,6 +231,11 @@ export function unpackArchive(bytes: Uint8Array): {
     createdAt: doc.createdAt ?? '',
     pageOpacity: doc.pageOpacity ?? 100,
     docFont: doc.docFont,
+    docColor:
+      typeof doc.docColor === 'string' &&
+      /^#[0-9a-fA-F]{6}$/.test(doc.docColor)
+        ? doc.docColor
+        : undefined,
     // v0.3 追加項目 — 欠落時は v0.2 までの既定挙動を再現する
     // （ページ番号なし / 升目は印刷に出る）
     pageNum: doc.pageNum === true,
