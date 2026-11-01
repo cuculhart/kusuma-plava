@@ -3407,11 +3407,48 @@ export function App() {
           readText().then((text) => {
             const target = writeChain ?? chains[0];
             if (!target) return void setBusy(null);
-            // 一括設定 — 分割流し込みはチャンク毎に全文書の
-            // あふれ計算が走り逆に遅い。ページ追加は自動管理
-            // が別タスクで段階的にやってくれる
             requestAnimationFrame(() =>
               setTimeout(() => {
+                // 大文書は あふれ→追加 の往復が二乗級に遅い —
+                // 枠容量から必要ページ数を概算して先に一括生成
+                const perPage = Math.max(
+                  50,
+                  genko.cells *
+                    genko.cols *
+                    Math.max(1, genko.columns ?? 1),
+                );
+                const need =
+                  Math.ceil(text.length / perPage) + 1;
+                if (need > model.pages.length) {
+                  const ax = curAxis();
+                  let next = model;
+                  const objs = contentObjects();
+                  const ids: string[] = [];
+                  while (next.pages.length < need) {
+                    next = addPage(next);
+                    const slot =
+                      next.pages[next.pages.length - 1].slot;
+                    for (const a of genkoAreaObjs(
+                      next.spec,
+                      slot,
+                      genko,
+                      ax,
+                      margins,
+                    )) {
+                      objs.push(a);
+                      ids.push(a.id);
+                    }
+                  }
+                  if (ids.length)
+                    setChains((cs) =>
+                      cs.map((c) =>
+                        c.id === target.id
+                          ? { ...c, areas: [...c.areas, ...ids] }
+                          : c,
+                      ),
+                    );
+                  commitPages(next, objs);
+                }
                 setChains((cs) =>
                   cs.map((c) =>
                     c.id === target.id ? { ...c, text } : c,
