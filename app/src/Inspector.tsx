@@ -18,7 +18,8 @@ import type { GenkoGrid, ImageData, TextAreaData } from './types';
 // v0.9: 升目仕様プリセット — id は i18n の doc.preset.<id> キーに対応
 const GENKO_PRESETS: { id: string; cells: number; cols: number }[] = [
   { id: 'g400', cells: 20, cols: 20 },
-  { id: 'bunko', cells: 42, cols: 34 },
+  { id: 'bunko', cells: 42, cols: 16 },
+  { id: 'tanko', cells: 43, cols: 17 },
 ];
 import { FONT_SIZES_MM, IMG_KIND, MM_PX, TEXT_KIND } from './types';
 import { fontOptions, useSysFonts } from './useSysFonts';
@@ -247,6 +248,9 @@ export function RightDock({
     /** v0.3: 升目プリセットで適用される字サイズ（mm）。
         適用先エリアが無い・算出不能なら null（ボタン無効） */
     fit400fs: number | null;
+    /** v0.9: 版面マージン（mm・四方共通） */
+    marginMm: number;
+    onMarginMm: (mm: number) => void;
     /** v0.5: 枠と字サイズを文書設定の升目仕様に合わせる */
     onFit400: () => void;
   };
@@ -782,6 +786,8 @@ function DocProps({
   onGridAlpha,
   hashira,
   onHashira,
+  marginMm,
+  onMarginMm,
   hanmenCells,
   fit400fs,
   onFit400,
@@ -814,6 +820,8 @@ function DocProps({
   onGridAlpha: (v: number) => void;
   hashira: string;
   onHashira: (s: string) => void;
+  marginMm: number;
+  onMarginMm: (mm: number) => void;
   hanmenCells: { v: number; h: number };
   fit400fs: number | null;
   onFit400: () => void;
@@ -880,6 +888,21 @@ function DocProps({
             onChange={(e) => onHashira(e.currentTarget.value)}
           />
         </label>
+        {/* v0.9: 版面マージン — 升目枠の字サイズと版面内寸に効く */}
+        <label>
+          {t('doc.margin')}
+          <input
+            type="number"
+            min={0}
+            max={60}
+            step={0.5}
+            value={marginMm}
+            onChange={(e) => {
+              const v = Number(e.currentTarget.value);
+              if (Number.isFinite(v)) onMarginMm(v);
+            }}
+          />
+        </label>
         <label>
           {t('doc.paper')}
           <select
@@ -893,6 +916,7 @@ function DocProps({
             <option value="B6">B6</option>
             <option value="A5">A5</option>
             <option value="A6">A6</option>
+            <option value="SHIROKU">四六判</option>
           </select>
         </label>
         <label>

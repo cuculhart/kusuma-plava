@@ -140,14 +140,17 @@ function syncSnapExtra(
     天/地/小口/ノド一律 */
 const HANMEN_MARGIN_MM = 20;
 
-/** 版面の実効内寸（mm）= 用紙 − 四方 HANMEN_MARGIN_MM − エリア内側
-    余白 TEXT_PAD_MM。升目数（hanmenCells 表示）と 400字詰め
-    プリセットで同じ箱を共有するためのヘルパ。 */
-function hanmenBox(spec: PaperSpec): { bw: number; bh: number } {
+/** 版面の実効内寸（mm）= 用紙 − 四方マージン − エリア内側
+    余白 TEXT_PAD_MM。升目数（hanmenCells 表示）と升目枠計算で
+    同じ箱を共有するためのヘルパ。マージンは文書設定可（v0.9）。 */
+function hanmenBox(
+  spec: PaperSpec,
+  margin: number = HANMEN_MARGIN_MM,
+): { bw: number; bh: number } {
   const { w, h } = paperDims(spec);
   return {
-    bw: w - 2 * (HANMEN_MARGIN_MM + TEXT_PAD_MM),
-    bh: h - 2 * (HANMEN_MARGIN_MM + TEXT_PAD_MM),
+    bw: w - 2 * (margin + TEXT_PAD_MM),
+    bh: h - 2 * (margin + TEXT_PAD_MM),
   };
 }
 
@@ -163,8 +166,12 @@ const HASHIRA_FONT_MM = 3;
     fs = min(版面高/cells, 版面幅/(cols × 段ピッチ係数))。
     段ピッチ = fontSize × (1 + RUBY_LANE_RATIO)。A4縦なら段ピッチが
     拘束して fs≈5.25mm（升目内寸 105×168mm）。非有限・0以下は null。 */
-function genkoFontSize(spec: PaperSpec, g: GenkoGrid): number | null {
-  const { bw, bh } = hanmenBox(spec);
+function genkoFontSize(
+  spec: PaperSpec,
+  g: GenkoGrid,
+  margin: number = HANMEN_MARGIN_MM,
+): number | null {
+  const { bw, bh } = hanmenBox(spec, margin);
   const fs = Math.min(bh / g.cells, bw / (g.cols * (1 + RUBY_LANE_RATIO)));
   return Number.isFinite(fs) && fs > 0 ? fs : null;
 }
@@ -177,8 +184,9 @@ function genkoFrame(
   slot: number,
   g: GenkoGrid,
   axis: StackAxis = 'y',
+  margin: number = HANMEN_MARGIN_MM,
 ): { x: number; y: number; w: number; h: number; fontSize: number } | null {
-  const fs = genkoFontSize(spec, g);
+  const fs = genkoFontSize(spec, g, margin);
   if (fs == null) return null;
   const p = pageRectAt(spec, slot, axis);
   const w = g.cols * fs * (1 + RUBY_LANE_RATIO) + 2 * TEXT_PAD_MM;
@@ -256,8 +264,9 @@ function refitWritingAreas(
   prev: PageModel,
   next: PageModel,
   axis: StackAxis = 'y',
+  margin: number = HANMEN_MARGIN_MM,
 ): WorldObject[] {
-  const m = HANMEN_MARGIN_MM;
+  const m = margin;
   const eps = 0.01; // mm — 浮動小数の計算誤差を許容
   const prevRects = pageRects(prev.spec, prev.pages, axis);
   return objects.map((o) => {
@@ -272,7 +281,7 @@ function refitWritingAreas(
         (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
       );
       if (!hit) return o;
-      const pf = genkoFrame(prev.spec, hit.slot, g, axis);
+      const pf = genkoFrame(prev.spec, hit.slot, g, axis, margin);
       if (
         !pf ||
         Math.abs(o.x - pf.x) > eps ||
@@ -281,7 +290,7 @@ function refitWritingAreas(
         Math.abs(o.h - pf.h) > eps
       )
         return o;
-      const f = genkoFrame(next.spec, hit.slot, g, axis);
+      const f = genkoFrame(next.spec, hit.slot, g, axis, margin);
       if (!f) return o;
       return {
         ...o,
@@ -410,6 +419,9 @@ export function App() {
   // v0.7: 柱（タイトル等の走り書き）— 文書設定。天余白・升目枠の右辺
   // 揃えで縦書きに出す。空=出さない。doc.json の hashira へ保存
   const [hashira, setHashira] = useState('');
+  // v0.9: 版面マージン（mm・四方共通）— 文書設定。升目枠の字サイズと
+  // 版面内寸の計算に使う（文庫など小口マージンの判型用）
+  const [marginMm, setMarginMm] = useState(HANMEN_MARGIN_MM);
   // v0.3: 目標字数 — アプリ設定（文書ではなく環境の好み）として
   // localStorage へ。正準値は字数（枚数入力は ×400 で畳み込む）
   const [goal, setGoal] = useState(
@@ -434,6 +446,7 @@ export function App() {
     gridColor: string;
     gridAlpha: number;
     hashira: string;
+    marginMm: number;
   };
   const histRef = useRef<{ past: Snap[]; future: Snap[]; last: number }>({
     past: [],
@@ -717,7 +730,7 @@ export function App() {
     const next = setPaper(model, spec);
     commitPages(
       next,
-      refitWritingAreas(contentObjects(), model, next, curAxis()),
+      refitWritingAreas(contentObjects(), model, next, curAxis(), marginMm),
     );
     focusPage(curPage, next);
   };
@@ -732,7 +745,7 @@ export function App() {
     // 末尾へ繋ぐ — あふれが次ページへそのまま流れる
     if (writeModeRef.current) {
       const slot = next.pages[next.pages.length - 1].slot;
-      const f = genkoFrame(next.spec, slot, genko, curAxis());
+      const f = genkoFrame(next.spec, slot, genko, curAxis(), marginMm);
       if (f) {
         const id = nextId('ta');
         content.push({
@@ -782,7 +795,7 @@ export function App() {
     // 執筆もできない）。連鎖への接続はページ順に合わせて、
     // 以降のページ上にある最初のエリアの直前へ挿入する。
     if (writeModeRef.current) {
-      const f = genkoFrame(next.spec, res.page.slot, genko, ax);
+      const f = genkoFrame(next.spec, res.page.slot, genko, ax, marginMm);
       if (f) {
         const id = nextId('ta');
         content.push({
@@ -856,6 +869,7 @@ export function App() {
     gridColor,
     gridAlpha,
     hashira,
+    marginMm,
   });
   const applySnap = (s: Snap) => {
     applyingRef.current = true;
@@ -879,6 +893,7 @@ export function App() {
     setGridColor(s.gridColor);
     setGridAlpha(s.gridAlpha);
     setHashira(s.hashira);
+    setMarginMm(s.marginMm);
     snapRef.current = s;
     applyingRef.current = false;
   };
@@ -918,7 +933,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, marginMm]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -954,6 +969,7 @@ export function App() {
           gridColor: DEFAULT_GRID_COLOR,
           gridAlpha: 1,
           hashira: '',
+          marginMm: HANMEN_MARGIN_MM,
         };
         const cur = {
           spec: r.model.spec,
@@ -969,6 +985,7 @@ export function App() {
           genko: r.genko ?? { ...GENKO_GRID },
           gridColor: r.gridColor,
           gridAlpha: r.gridAlpha,
+          marginMm: r.marginMm,
           hashira: r.hashira,
         };
         if (JSON.stringify(blank) === JSON.stringify(cur)) return;
@@ -1007,6 +1024,7 @@ export function App() {
           gridColor,
           gridAlpha,
           hashira,
+          marginMm,
         });
         void saveDraft(u8).then((at) => {
           if (at) setDraftAt(at);
@@ -1017,7 +1035,7 @@ export function App() {
     }, 1500);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, marginMm]);
 
   // v0.4: 執筆モードのホイール横送り — ページは右→左に並ぶので
   // ホイール（deltaY やトラックパッド deltaX）は横パンへ向ける。
@@ -1103,6 +1121,7 @@ export function App() {
     setGridColor(DEFAULT_GRID_COLOR);
     setGridAlpha(1);
     setHashira('');
+    setMarginMm(HANMEN_MARGIN_MM);
     createdAtRef.current = new Date().toISOString();
     dirtyRef.current = false;
     engine.setSelection([]);
@@ -1125,6 +1144,7 @@ export function App() {
       gridColor,
       gridAlpha,
       hashira,
+      marginMm,
     });
     const a = document.createElement('a');
     const url = URL.createObjectURL(
@@ -1177,6 +1197,7 @@ export function App() {
     setGridAlpha(r.gridAlpha);
     // v0.7: 柱 — unpack 側で欠落は空へ畳み済み（空=出さない）
     setHashira(r.hashira);
+    setMarginMm(r.marginMm ?? HANMEN_MARGIN_MM);
     createdAtRef.current = r.createdAt || new Date().toISOString();
     dirtyRef.current = false;
     engine.setSelection([]);
@@ -1862,7 +1883,7 @@ export function App() {
       };
     }
     // エリア無し — 版面全体の仮想升目（旧表示）
-    const { bw, bh } = hanmenBox(spec);
+    const { bw, bh } = hanmenBox(spec, marginMm);
     return {
       v: Math.max(0, Math.floor((bh + 1e-6) / cellFs)),
       h: Math.max(0, Math.floor((bw + 1e-6) / pitch)),
@@ -1898,7 +1919,7 @@ export function App() {
         (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
       );
       if (!hit) return o;
-      const old = genkoFrame(model.spec, hit.slot, d.genko, ax);
+      const old = genkoFrame(model.spec, hit.slot, d.genko, ax, marginMm);
       if (
         !old ||
         Math.abs(o.x - old.x) > eps ||
@@ -1907,7 +1928,7 @@ export function App() {
         Math.abs(o.h - old.h) > eps
       )
         return o;
-      const f = genkoFrame(model.spec, hit.slot, g, ax);
+      const f = genkoFrame(model.spec, hit.slot, g, ax, marginMm);
       if (!f) return o;
       return {
         ...o,
@@ -1916,6 +1937,48 @@ export function App() {
         w: f.w,
         h: f.h,
         data: { ...d, fontSize: f.fontSize, genko: { ...g } },
+      };
+    });
+    engine.setDoc({ ...engine.doc, objects });
+  };
+
+  // v0.9: 版面マージン変更 — 旧マージンの枠と一致する升目枠を
+  // 新マージンで作り直す（applyGenko と同じ追従規則）
+  const applyMargin = (mm: number) => {
+    if (!Number.isFinite(mm) || mm < 0 || mm > 60) return;
+    const prev = marginMm;
+    setMarginMm(mm);
+    const ax = curAxis();
+    const rects = pageRects(model.spec, model.pages, ax);
+    const eps = 0.01;
+    const objects = engine.doc.objects.map((o) => {
+      if (o.kind !== TEXT_KIND) return o;
+      const d = o.data as TextAreaData | undefined;
+      if (!d?.genko) return o;
+      const cx = o.x + o.w / 2;
+      const cy = o.y + o.h / 2;
+      const hit = rects.find(
+        (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
+      );
+      if (!hit) return o;
+      const old = genkoFrame(model.spec, hit.slot, d.genko, ax, prev);
+      if (
+        !old ||
+        Math.abs(o.x - old.x) > eps ||
+        Math.abs(o.y - old.y) > eps ||
+        Math.abs(o.w - old.w) > eps ||
+        Math.abs(o.h - old.h) > eps
+      )
+        return o;
+      const f = genkoFrame(model.spec, hit.slot, d.genko, ax, mm);
+      if (!f) return o;
+      return {
+        ...o,
+        x: f.x,
+        y: f.y,
+        w: f.w,
+        h: f.h,
+        data: { ...d, fontSize: f.fontSize },
       };
     });
     engine.setDoc({ ...engine.doc, objects });
@@ -1936,7 +1999,7 @@ export function App() {
   // エリアが用紙上に無い等で枠を組めない時は字サイズのみ合わせる
   // 旧挙動へ退く。部分書式の fontSize マークは触らずエリア既定のみ
   // 更新 — Inspector サイズ欄と同じ patchAreaData 経路で再レイアウト。
-  const fit400fs = genkoFontSize(spec, genko);
+  const fit400fs = genkoFontSize(spec, genko, marginMm);
   const fit400 = () => {
     if (fit400fs == null || !cellArea) return;
     const cx = cellArea.x + cellArea.w / 2;
@@ -1945,7 +2008,7 @@ export function App() {
     const hit = pageRects(spec, model.pages, ax).find(
       (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
     );
-    const f = hit ? genkoFrame(spec, hit.slot, genko, ax) : null;
+    const f = hit ? genkoFrame(spec, hit.slot, genko, ax, marginMm) : null;
     if (f) {
       patchObject(cellArea.id, { x: f.x, y: f.y, w: f.w, h: f.h });
       patchAreaData(cellArea.id, {
@@ -2743,6 +2806,8 @@ export function App() {
             onGridAlpha: setGridAlpha,
             hashira,
             onHashira: setHashira,
+            marginMm,
+            onMarginMm: applyMargin,
             hanmenCells,
             fit400fs: cellArea ? fit400fs : null,
             onFit400: fit400,

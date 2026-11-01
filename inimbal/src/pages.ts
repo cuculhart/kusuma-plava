@@ -13,7 +13,14 @@
 //   同じ PageModel が2つの世界座標系を持ち、remapRectAxis で往復変換する
 //   （書庫・履歴は常に正準系 'y' で保持する規約 — app 側で変換）。
 
-export type PaperSize = 'A4' | 'A3' | 'B5' | 'B6' | 'A5' | 'A6';
+export type PaperSize =
+  | 'A4'
+  | 'A3'
+  | 'B5'
+  | 'B6'
+  | 'A5'
+  | 'A6'
+  | 'SHIROKU';
 
 /** ページの積み方向。'y'=縦積み（下へ）、'x'=横積み（右→左、page0 が最右） */
 export type StackAxis = 'y' | 'x';
@@ -31,6 +38,7 @@ export const PAPER_DIMS_MM: Record<PaperSize, { w: number; h: number }> = {
   B6: { w: 128, h: 182 },
   A5: { w: 148, h: 210 },
   A6: { w: 105, h: 148 },
+  SHIROKU: { w: 127, h: 188 },
 };
 
 export function paperDims(spec: PaperSpec): { w: number; h: number } {

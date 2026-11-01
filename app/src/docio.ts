@@ -43,6 +43,8 @@ interface ArchiveDoc {
   gridAlpha?: number;
   /** 柱 — 天余白へ出す走り書き（v0.7。欠落・空=出さない） */
   hashira?: string;
+  /** v0.9: 版面マージン（mm・四方共通）。欠落=20mm既定 */
+  marginMm?: number;
 }
 
 const EXT_OF_MIME: Record<string, string> = {
@@ -93,6 +95,7 @@ export function packArchive(input: {
   gridColor?: string;
   gridAlpha?: number;
   hashira?: string;
+  marginMm?: number;
 }): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   let imgN = 0;
@@ -124,6 +127,7 @@ export function packArchive(input: {
     gridAlpha: input.gridAlpha,
     // 空文字は書き出さない（unpack 側は欠落=空として畳む）
     hashira: input.hashira || undefined,
+    marginMm: input.marginMm,
   };
   files['doc.json'] = strToU8(JSON.stringify(doc));
   return zipSync(files);
@@ -148,6 +152,7 @@ export function unpackArchive(bytes: Uint8Array): {
   gridAlpha: number;
   /** v0.7: 柱 — 天余白へ出す走り書き。欠落・非文字列は空（出さない） */
   hashira: string;
+  marginMm?: number;
 } {
   const files = unzipSync(bytes);
   const raw = files['doc.json'];
@@ -207,5 +212,12 @@ export function unpackArchive(bytes: Uint8Array): {
         : 1,
     // v0.7: 柱 — 文字列以外（旧書庫の欠落含む）は空 = 出さない
     hashira: typeof doc.hashira === 'string' ? doc.hashira : '',
+    marginMm:
+      typeof doc.marginMm === 'number' &&
+      Number.isFinite(doc.marginMm) &&
+      doc.marginMm >= 0 &&
+      doc.marginMm <= 60
+        ? doc.marginMm
+        : undefined,
   };
 }
