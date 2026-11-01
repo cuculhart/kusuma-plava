@@ -2029,9 +2029,10 @@ export function App() {
     const sl = layouts
       .get(writeChain.id)
       ?.slices.find((s) => s.areaId === inside[0].id);
-    // 空白のみ（改行後の字下げ全角スペース等）も空扱い — さもないと
-    // 末尾に「　」だけ載った空ページが残ってしまう
-    return sl && sl.text.trim() === '' ? last.id : null;
+    // 空白のみ（改行後の字下げ全角スペース等）も空扱い、さらに
+    // 連鎖未所属の空枠（sl=undefined — refit等で残った孤児枠）
+    // も削る — さもないと末尾に空ページが残ってしまう
+    return !sl || sl.text.trim() === '' ? last.id : null;
   })();
   useEffect(() => {
     // あふれが空白だけなら追加しない — 追加すると空ページを
