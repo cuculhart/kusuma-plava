@@ -2305,9 +2305,32 @@ export function App() {
         })
         .sort((a, b) => a.y - b.y); // 上→下 = col 0..k-1
       if (!onPage.length) continue;
+      const frames = genkoFrames(model.spec, r.slot, g, ax, margins);
       onPage.forEach((o, i) => {
-        if (i < n) return; // 残る段は先の refit で新 rect 済み
-        dropIds.add(o.id);
+        if (i >= n) {
+          dropIds.add(o.id);
+          return;
+        }
+        // 残る段も無条件で新枠・col・仕様を書き直す — refit の
+        // 位置一致を通らなかった枠は col/fontSize が古いまま
+        // 固まり、以後ずっと同期を外れ続けるため
+        const f = frames[i];
+        if (!f) return;
+        const k = objects.indexOf(o);
+        const dd = o.data as TextAreaData;
+        objects[k] = {
+          ...o,
+          x: f.x,
+          y: f.y,
+          w: f.w,
+          h: f.h,
+          data: {
+            ...dd,
+            fontSize: f.fontSize,
+            genko: { ...g },
+            col: i,
+          },
+        };
       });
       if (onPage.length < n) {
         const extra = genkoAreaObjs(
