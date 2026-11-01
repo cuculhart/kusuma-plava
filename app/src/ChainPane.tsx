@@ -58,6 +58,7 @@ export function ChainPane({
   // 選択範囲はボタン押下でフォーカスが外れても保持するため state で記憶
   const [sel, setSel] = useState<{ s: number; e: number }>({ s: 0, e: 0 });
   const [markColor, setMarkColor] = useState('#222222');
+  const [folded, setFolded] = useState(false);
 
 
   // 選択開始位置の実効色（マーク後勝ち → エリア既定へフォールバック）
@@ -243,7 +244,7 @@ export function ChainPane({
   const sheets = (total / 400).toFixed(1);
 
   return (
-    <aside className="chain-pane">
+    <aside className={folded ? 'chain-pane folded' : 'chain-pane'}>
       {/* 複数連鎖の切替タブ（連鎖別字数つき） */}
       {chains && chains.length > 1 && (
         <div className="chain-tabs">
@@ -260,7 +261,14 @@ export function ChainPane({
       )}
       <header>
         <span>{tf(t, 'chain.title', chain.areas.length)}</span>
-        <button onClick={onClose} title={t('chain.close')}>
+        {/* v0.9: 執筆モードでは × は「畳み」— ペイン本体を畳んで
+            文書設定へ領域を返す（選択解除の onClose は組版モード用） */}
+        <button
+          onClick={() =>
+            writeMode ? setFolded((v) => !v) : onClose()
+          }
+          title={writeMode ? (folded ? '開く' : '畳む') : t('chain.close')}
+        >
           ×
         </button>
       </header>

@@ -1204,11 +1204,12 @@ export function App() {
     const fill = gridLineCss(gridBg, gridBgAlpha);
     engine.setDoc({
       ...engine.doc,
-      objects: engine.doc.objects.map((o) =>
-        (o.data as TextAreaData | undefined)?.genko
+      objects: engine.doc.objects.map((o) => {
+        const d = o.data as TextAreaData | undefined;
+        return d?.genko || d?.auto
           ? { ...o, style: { ...(o.style ?? {}), fill } }
-          : o,
-      ),
+          : o;
+      }),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gridBg, gridBgAlpha]);
