@@ -936,13 +936,36 @@ function DocProps({
           />
         </label>
         {/* v0.9: 版面マージン — 天・地・ノド・小口（mm）。
-            ノドは綴じ側でページの左右へ自動反転する */}
+            ノドは綴じ側でページの左右へ自動反転する。
+            4入力を1行に並べるとペインをはみ出すので2行に分ける */}
         <div className="margin-row">
           <span className="dim">{t('doc.margin')}</span>
           {(
             [
               ['top', 'doc.margin.t'],
               ['bottom', 'doc.margin.b'],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} className="margin-field">
+              {t(label)}
+              <input
+                type="number"
+                min={0}
+                max={80}
+                step={0.5}
+                value={margins[key]}
+                onChange={(e) => {
+                  const v = Number(e.currentTarget.value);
+                  if (Number.isFinite(v))
+                    onMargins({ ...margins, [key]: v });
+                }}
+              />
+            </label>
+          ))}
+        </div>
+        <div className="margin-row">
+          {(
+            [
               ['inside', 'doc.margin.i'],
               ['outside', 'doc.margin.o'],
             ] as const
