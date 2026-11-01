@@ -3393,21 +3393,43 @@ export function App() {
           // 長文の流れ込みは重い — まず進行中オーバーレイを
           // 描いてから次フレームで流す（描けなければハングに見える）
           setBusy(t('hint.importing'));
-          f.text().then((text) => {
-            requestAnimationFrame(() =>
-              setTimeout(() => {
-                const target = writeChain ?? chains[0];
-                if (target) {
-                  setChains((cs) =>
-                    cs.map((c) =>
-                      c.id === target.id ? { ...c, text } : c,
-                    ),
-                  );
-                  flash(tf(t, 'hint.imported', f.name));
-                }
+          // .txt は UTF-8 とは限らない（青空文庫系は Shift-JIS）
+          // — UTF-8 で解釈できなければ Shift-JIS で読み直す
+          const readText = async () => {
+            const buf = await f.arrayBuffer();
+            const utf8 = new TextDecoder('utf-8', { fatal: false }).decode(buf);
+            if (utf8.includes('�'))
+              return new TextDecoder('shift_jis').decode(buf);
+            return utf8;
+          };
+          readText().then((text) => {
+            const target = writeChain ?? chains[0];
+            if (!target) return void setBusy(null);
+            // 一括流し込みは UI スレッドを長く塞ぎ「ページが
+            // 応答しません」になる — 行単位で分割して段階的に
+            // 流し込み、チャンク間で描画を入れて進行率を出す
+            const lines = text.split('\n');
+            const STEP = 300; // 行/回 — 1回あたり数秒で収まる量
+            const total = lines.length;
+            let pos = 0;
+            const pour = () => {
+              pos = Math.min(pos + STEP, total);
+              const part = lines.slice(0, pos).join('\n');
+              setChains((cs) =>
+                cs.map((c) =>
+                  c.id === target.id ? { ...c, text: part } : c,
+                ),
+              );
+              setBusy(
+                `${t('hint.importing')} ${Math.round((pos / total) * 100)}%`,
+              );
+              if (pos < total) setTimeout(pour, 0);
+              else {
                 setBusy(null);
-              }, 30),
-            );
+                flash(tf(t, 'hint.imported', f.name));
+              }
+            };
+            requestAnimationFrame(() => setTimeout(pour, 30));
           });
         }}
       />
