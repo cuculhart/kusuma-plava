@@ -769,6 +769,8 @@ export function App() {
       objects ?? engine.doc.objects.filter((o) => o.kind !== PAGE_KIND);
     engine.setDoc({
       ...engine.doc,
+      ...next, // v0.9: spec/pages も engine.doc へ載せ替える —
+      // 残すと旧ページ情報が残影（ghost page）として出る
       objects: [
         ...pageObjects(next, pageOpacity / 100, curAxis(), paperColor),
         ...content,
