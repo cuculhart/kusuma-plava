@@ -901,15 +901,22 @@ function DocProps({
         const v = e.currentTarget.value;
         if (axis === 'cells') setCellsIn(v);
         else setColsIn(v);
-        const n = Number(v);
-        if (!Number.isInteger(n) || n < 1 || n > 100) return;
-        onGenko(
-          axis === 'cells'
-            ? { ...genko, cells: n }
-            : { ...genko, cols: n },
-        );
       }}
-      onBlur={() => {
+      // 適用は確定時のみ — 入力途中の値（30→2→22 の 2 や
+      // 32）で refit が走るとエラーのもと
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+      }}
+      onBlur={(e) => {
+        const v = e.currentTarget.value;
+        const n = Number(v);
+        if (Number.isInteger(n) && n >= 1 && n <= 100) {
+          onGenko(
+            axis === 'cells'
+              ? { ...genko, cells: n }
+              : { ...genko, cols: n },
+          );
+        }
         // 確定値へ戻す（無効入力は破棄）
         setCellsIn(String(genko.cells));
         setColsIn(String(genko.cols));
