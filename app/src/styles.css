@@ -895,6 +895,9 @@ body,
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* .doc-settings の max-height:45% 制限を外す — 主入力欄は
+     残りの高さを全部使ってよい */
+  max-height: none;
 }
 .chain-details[open] .chain-pane {
   flex: 1;
