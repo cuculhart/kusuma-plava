@@ -2533,6 +2533,20 @@ export function App() {
   })();
 
   const renderObject = (o: WorldObject) => {
+    // v0.7: 執筆モードの仮想化 — 大文書では全エリアの
+    // sliceRuns/DOM が支配的コスト。現ページ±1以外は描かない
+    if (writeMode) {
+      const cx = o.x + o.w / 2;
+      const cy = o.y + o.h / 2;
+      const hit = rects.find(
+        (r) =>
+          cx >= r.x &&
+          cx < r.x + r.w &&
+          cy >= r.y &&
+          cy < r.y + r.h,
+      );
+      if (hit && Math.abs(hit.index - curPage) > 1) return null;
+    }
     if (o.kind === PAGE_KIND) {
       const d = o.data as { index: number };
       return (
