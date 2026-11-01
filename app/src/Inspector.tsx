@@ -307,7 +307,7 @@ export function RightDock({
       <>
         {/* v0.9: 連鎖テキストは文書設定と同じ縦方向の
             details 折りたたみ（既定は開いた状態） */}
-        <details className="doc-settings" open>
+        <details className="doc-settings chain-details" open>
           <summary>
             {tf(t, 'chain.title', chain.areas.length)}
           </summary>

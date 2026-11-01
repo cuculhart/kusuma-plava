@@ -885,12 +885,20 @@ body,
   padding: 14px;
 }
 
-/* v0.9: 連鎖ペインは高さを伸ばしすぎない — 文書設定との
-   併用でペインが横スクロール・縦はみ出しを起こさないよう
-   入力欄の高さに上限をつける */
+/* v0.9: 連鎖ペインは主入力欄 — 開いた details が残りの高さを
+   埋めて入力欄を縦いっぱいに伸ばす（文書設定を畳むと全部使える） */
 .chain-text {
   min-height: 120px;
-  max-height: 260px;
+}
+.chain-details[open] {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.chain-details[open] .chain-pane {
+  flex: 1;
+  min-height: 0;
 }
 
 /* ── 画像オブジェクト ── */
