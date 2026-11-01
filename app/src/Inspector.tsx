@@ -264,6 +264,11 @@ export function RightDock({
     /** v0.6: 升目線の色（#rrggbb）と濃さ 0〜1 */
     gridColor: string;
     onGridColor: (s: string) => void;
+    /** v0.9: 升目マスの背景色+濃さ */
+    gridBg: string;
+    onGridBg: (s: string) => void;
+    gridBgAlpha: number;
+    onGridBgAlpha: (a: number) => void;
     gridAlpha: number;
     onGridAlpha: (v: number) => void;
     /** v0.7: 柱 — 天余白へ出す走り書き（タイトル等。空=出さない） */
@@ -803,6 +808,10 @@ function DocProps({
   onGenko,
   gridColor,
   onGridColor,
+  gridBg,
+  onGridBg,
+  gridBgAlpha,
+  onGridBgAlpha,
   gridAlpha,
   onGridAlpha,
   hashira,
@@ -837,6 +846,10 @@ function DocProps({
   onGenko: (g: GenkoGrid) => void;
   gridColor: string;
   onGridColor: (s: string) => void;
+  gridBg: string;
+  onGridBg: (s: string) => void;
+  gridBgAlpha: number;
+  onGridBgAlpha: (a: number) => void;
   gridAlpha: number;
   onGridAlpha: (v: number) => void;
   hashira: string;
@@ -1068,6 +1081,26 @@ function DocProps({
             onChange={(e) => onGridAlpha(+e.currentTarget.value / 100)}
           />
           {Math.round(gridAlpha * 100)}%
+        </div>
+        {/* v0.9: 升目マスの背景色+透過 — 枠オブジェクトの塗り
+            （0%=用紙色のまま。白寄せで升目を浮き立たせる用途も可） */}
+        <div className="ins-row" title={t('doc.gridBgTip')}>
+          {t('doc.gridBg')}
+          <input
+            type="color"
+            value={gridBg}
+            onChange={(e) => onGridBg(e.currentTarget.value)}
+          />
+          {t('doc.gridAlpha')}
+          <input
+            type="range"
+            min={0}
+            max={100}
+            style={{ width: 90 }}
+            value={Math.round(gridBgAlpha * 100)}
+            onChange={(e) => onGridBgAlpha(+e.currentTarget.value / 100)}
+          />
+          {Math.round(gridBgAlpha * 100)}%
         </div>
         <label>
           {t('doc.opacity')}

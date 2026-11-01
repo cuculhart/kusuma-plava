@@ -80,6 +80,8 @@ export const DEFAULT_TEXT_DATA: TextAreaData = {
 
 /** 升目グリッド線の既定色 — styles.css の rgba(120,140,160) と同色 */
 export const DEFAULT_GRID_COLOR = '#788ca0';
+/** v0.9: 升目マスの背景色（塗り）既定 — 白・透過0%=用紙色のまま */
+export const DEFAULT_GRID_BG = '#ffffff';
 /** 升目線（升目枠 / ルビ欄）の基準濃さ — 文書設定の透過値に乗算する。
     透過 100% で従来の見た目（0.45 / 0.18）を再現する */
 export const GRID_CELL_ALPHA = 0.45;

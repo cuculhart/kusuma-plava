@@ -67,6 +67,10 @@ interface ArchiveDoc {
       欠落=DEFAULT_GRID_COLOR・1 — 従来の薄いグレー） */
   gridColor?: string;
   gridAlpha?: number;
+  /** 升目マスの背景色（#rrggbb）と濃さ 0〜1（v0.9。
+      欠落=#ffffff・0 — 用紙色のまま） */
+  gridBg?: string;
+  gridBgAlpha?: number;
   /** 柱 — 天余白へ出す走り書き（v0.7。欠落・空=出さない） */
   hashira?: string;
   /** v0.9: 版面マージン（天・地・ノド・小口・mm）。欠落=20mm既定 */
@@ -122,6 +126,8 @@ export function packArchive(input: {
   genko?: GenkoGrid;
   gridColor?: string;
   gridAlpha?: number;
+  gridBg?: string;
+  gridBgAlpha?: number;
   hashira?: string;
   margins?: PageMargins;
 }): Uint8Array {
@@ -153,6 +159,8 @@ export function packArchive(input: {
     genko: input.genko,
     gridColor: input.gridColor,
     gridAlpha: input.gridAlpha,
+    gridBg: input.gridBg,
+    gridBgAlpha: input.gridBgAlpha,
     // 空文字は書き出さない（unpack 側は欠落=空として畳む）
     hashira: input.hashira || undefined,
     margins: input.margins,
@@ -178,6 +186,9 @@ export function unpackArchive(bytes: Uint8Array): {
   /** v0.6: 升目線の色と濃さ。欠落・不正値は既定（薄いグレー・濃さ1） */
   gridColor: string;
   gridAlpha: number;
+  /** v0.9: 升目マスの背景色+濃さ。欠落=#ffffff・0 */
+  gridBg?: string;
+  gridBgAlpha?: number;
   /** v0.7: 柱 — 天余白へ出す走り書き。欠落・非文字列は空（出さない） */
   hashira: string;
   margins?: PageMargins;
@@ -238,6 +249,18 @@ export function unpackArchive(bytes: Uint8Array): {
       doc.gridAlpha <= 1
         ? doc.gridAlpha
         : 1,
+    gridBg:
+      typeof doc.gridBg === 'string' &&
+      /^#[0-9a-fA-F]{6}$/.test(doc.gridBg)
+        ? doc.gridBg
+        : undefined,
+    gridBgAlpha:
+      typeof doc.gridBgAlpha === 'number' &&
+      Number.isFinite(doc.gridBgAlpha) &&
+      doc.gridBgAlpha >= 0 &&
+      doc.gridBgAlpha <= 1
+        ? doc.gridBgAlpha
+        : undefined,
     // v0.7: 柱 — 文字列以外（旧書庫の欠落含む）は空 = 出さない
     hashira: typeof doc.hashira === 'string' ? doc.hashira : '',
     margins: unpackMargins(doc),

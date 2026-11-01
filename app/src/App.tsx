@@ -51,6 +51,7 @@ import { createCanvasMeasurer } from './measure';
 import { vunitSpans, type VStyle } from './vtrender';
 import {
   DEFAULT_FONT_FAMILY,
+  DEFAULT_GRID_BG,
   DEFAULT_GRID_COLOR,
   DEFAULT_TEXT_DATA,
   GRID_CELL_ALPHA,
@@ -450,6 +451,10 @@ export function App() {
   // 透過 100% は従来の薄いグレー（0.45/0.18）と同じ見た目
   const [gridColor, setGridColor] = useState(DEFAULT_GRID_COLOR);
   const [gridAlpha, setGridAlpha] = useState(1);
+  // v0.9: 升目マスの背景色+濃さ — 文書設定。枠オブジェクトの
+  // style.fill へ入りキャンバス・印刷ともに背景として出る
+  const [gridBg, setGridBg] = useState(DEFAULT_GRID_BG);
+  const [gridBgAlpha, setGridBgAlpha] = useState(0);
   // v0.7: 柱（タイトル等の走り書き）— 文書設定。天余白・升目枠の右辺
   // 揃えで縦書きに出す。空=出さない。doc.json の hashira へ保存
   const [hashira, setHashira] = useState('');
@@ -480,6 +485,8 @@ export function App() {
     gridPrint: boolean;
     genko: GenkoGrid;
     gridColor: string;
+    gridBg: string;
+    gridBgAlpha: number;
     gridAlpha: number;
     hashira: string;
     margins: PageMargins;
@@ -791,7 +798,10 @@ export function App() {
           y: f.y,
           w: f.w,
           h: f.h,
-          style: { stroke: 'rgba(90,110,140,0.4)' },
+          style: {
+            stroke: 'rgba(90,110,140,0.4)',
+            fill: gridLineCss(gridBg, gridBgAlpha),
+          },
           data: {
             ...DEFAULT_TEXT_DATA,
             fontFamily: docFont,
@@ -841,7 +851,10 @@ export function App() {
           y: f.y,
           w: f.w,
           h: f.h,
-          style: { stroke: 'rgba(90,110,140,0.4)' },
+          style: {
+            stroke: 'rgba(90,110,140,0.4)',
+            fill: gridLineCss(gridBg, gridBgAlpha),
+          },
           data: {
             ...DEFAULT_TEXT_DATA,
             fontFamily: docFont,
@@ -904,6 +917,8 @@ export function App() {
     genko,
     gridColor,
     gridAlpha,
+    gridBg,
+    gridBgAlpha,
     hashira,
     margins,
   });
@@ -927,6 +942,8 @@ export function App() {
     setGridPrint(s.gridPrint);
     setGenko(s.genko);
     setGridColor(s.gridColor);
+    setGridBg(s.gridBg);
+    setGridBgAlpha(s.gridBgAlpha);
     setGridAlpha(s.gridAlpha);
     setHashira(s.hashira);
     setMargins(s.margins);
@@ -969,7 +986,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -1004,6 +1021,8 @@ export function App() {
           genko: { ...GENKO_GRID },
           gridColor: DEFAULT_GRID_COLOR,
           gridAlpha: 1,
+          gridBg: DEFAULT_GRID_BG,
+          gridBgAlpha: 0,
           hashira: '',
           margins: { ...DEFAULT_MARGINS },
         };
@@ -1021,6 +1040,8 @@ export function App() {
           genko: r.genko ?? { ...GENKO_GRID },
           gridColor: r.gridColor,
           gridAlpha: r.gridAlpha,
+          gridBg: r.gridBg,
+          gridBgAlpha: r.gridBgAlpha,
           margins: r.margins,
           hashira: r.hashira,
         };
@@ -1059,6 +1080,8 @@ export function App() {
           genko,
           gridColor,
           gridAlpha,
+          gridBg,
+          gridBgAlpha,
           hashira,
           margins,
         });
@@ -1071,7 +1094,7 @@ export function App() {
     }, 1500);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha]);
 
   // v0.4: 執筆モードのホイール横送り — ページは右→左に並ぶので
   // ホイール（deltaY やトラックパッド deltaX）は横パンへ向ける。
@@ -1122,6 +1145,21 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // v0.9: 升目マスの背景色 → 升目枠オブジェクトの fill を即時反映
+  // （data.genko を持つ枠のみ。手動で色を変えた枠も文書設定へ戻る）
+  useEffect(() => {
+    const fill = gridLineCss(gridBg, gridBgAlpha);
+    engine.setDoc({
+      ...engine.doc,
+      objects: engine.doc.objects.map((o) =>
+        (o.data as TextAreaData | undefined)?.genko
+          ? { ...o, style: { ...(o.style ?? {}), fill } }
+          : o,
+      ),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridBg, gridBgAlpha]);
+
   // G3: 用紙の透過 → ページ枠オブジェクトの fill を即時反映
   useEffect(() => {
     engine.setDoc({
@@ -1155,6 +1193,8 @@ export function App() {
     setGridPrint(true);
     setGenko({ ...GENKO_GRID });
     setGridColor(DEFAULT_GRID_COLOR);
+    setGridBg(DEFAULT_GRID_BG);
+    setGridBgAlpha(0);
     setGridAlpha(1);
     setHashira('');
     setMargins({ ...DEFAULT_MARGINS });
@@ -1179,6 +1219,8 @@ export function App() {
       genko,
       gridColor,
       gridAlpha,
+      gridBg,
+      gridBgAlpha,
       hashira,
       margins,
     });
@@ -1231,6 +1273,8 @@ export function App() {
     // v0.6: 升目線の色+濃さ — unpack 側で欠落・不正値は既定へ畳み済み
     setGridColor(r.gridColor);
     setGridAlpha(r.gridAlpha);
+    setGridBg(r.gridBg ?? DEFAULT_GRID_BG);
+    setGridBgAlpha(r.gridBgAlpha ?? 0);
     // v0.7: 柱 — unpack 側で欠落は空へ畳み済み（空=出さない）
     setHashira(r.hashira);
     setMargins(r.margins ?? { ...DEFAULT_MARGINS });
@@ -2842,6 +2886,10 @@ export function App() {
             onGridColor: setGridColor,
             gridAlpha,
             onGridAlpha: setGridAlpha,
+            gridBg,
+            onGridBg: setGridBg,
+            gridBgAlpha,
+            onGridBgAlpha: setGridBgAlpha,
             hashira,
             onHashira: setHashira,
             margins,
