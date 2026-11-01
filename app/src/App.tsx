@@ -2137,9 +2137,38 @@ export function App() {
       // ない spec や連鎖未接続）— 打ち切らないと無限ループ
       if (wcOverflow === wcLastOv.current) return;
       wcLastOv.current = wcOverflow;
-      // 同期で呼ぶと履歴スナップ等の setState と連鎖して
-      // update depth 超過になる — 別タスク化して切り離す
-      setTimeout(appendPage, 0);
+      // あふれ文字数から必要ページを一括追加 — 1ページずつ
+      // 往復すると大文書で時間がかかる。別タスク化も兼ねる
+      setTimeout(() => {
+        const perPage = Math.max(
+          50,
+          genko.cells * genko.cols * Math.max(1, genko.columns ?? 1),
+        );
+        const need = Math.ceil(wcOverflow.length / perPage) + 1;
+        const ax = curAxis();
+        let next = model;
+        const objs = contentObjects();
+        const ids: string[] = [];
+        while (ids.length < need || next.pages.length < model.pages.length + need) {
+          next = addPage(next);
+          const slot = next.pages[next.pages.length - 1].slot;
+          for (const a of genkoAreaObjs(next.spec, slot, genko, ax, margins)) {
+            objs.push(a);
+            ids.push(a.id);
+          }
+          if (next.pages.length >= model.pages.length + need) break;
+        }
+        const target = writeChain ?? chains[0];
+        if (target && ids.length)
+          setChains((cs) =>
+            cs.map((c) =>
+              c.id === target.id
+                ? { ...c, areas: [...c.areas, ...ids] }
+                : c,
+            ),
+          );
+        commitPages(next, objs);
+      }, 0);
       return;
     }
     wcLastOv.current = '';
