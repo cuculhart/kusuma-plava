@@ -920,6 +920,9 @@ export function App() {
     );
     const inside = new Set<string>();
     const objs = engine.doc.objects.filter((o) => {
+      // ページ枠オブジェクトはすべて commitPages が作り直す —
+      // 残すと旧枠+新枠で id(p1,p2…) が重複する
+      if (o.kind === PAGE_KIND) return false;
       if (!pr) return true;
       const cx = o.x + o.w / 2;
       const cy = o.y + o.h / 2;
@@ -929,8 +932,7 @@ export function App() {
         cy >= pr.y &&
         cy < pr.y + pr.h;
       if (!hit) return true;
-      // 消すページの枠自身も除去 — 残すと空の紙だけの残影が出る
-      if (o.kind !== PAGE_KIND) inside.add(o.id);
+      inside.add(o.id);
       return false;
     });
     if (inside.size)
