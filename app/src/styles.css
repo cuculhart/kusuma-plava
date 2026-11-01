@@ -1497,3 +1497,9 @@ body,
   font-size: 11px;
 }
 .margin-field input { width: 38px; }
+
+/* v0.9: 執筆モードでも畳みを効かせる — mode-write の
+   400px 指定が collapsed の 24px を詳細度で上回るため明示 */
+.app.mode-write .right-dock.collapsed {
+  width: 24px;
+}
