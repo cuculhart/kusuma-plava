@@ -618,7 +618,12 @@ export function ChainPane({
       )}
       <footer className="chain-links">
         {chain.areas.length > 1
-          ? `${chain.areas.join(' → ')}`
+          ? chain.areas.length > 10
+            ? // 長大な連鎖は途中を省略 — ドックを埋め尽くさない
+              `${chain.areas.slice(0, 8).join(' → ')} → … → ${
+                chain.areas[chain.areas.length - 1]
+              }（${chain.areas.length}）`
+            : `${chain.areas.join(' → ')}`
           : t('chain.nolink')}
       </footer>
     </aside>
