@@ -78,6 +78,7 @@ function pageObjects(
   model: PageModel,
   opacity = 1,
   axis: StackAxis = 'y',
+  color = '#ffffff',
 ): WorldObject[] {
   return pageRects(model.spec, model.pages, axis).map((r) => ({
     id: r.id,
@@ -88,7 +89,7 @@ function pageObjects(
     h: r.h,
     locked: true,
     layer: -1,
-    style: { fill: `rgba(255,255,255,${opacity})` },
+    style: { fill: gridLineCss(color, opacity) },
     data: { index: r.index },
   }));
 }
@@ -408,6 +409,9 @@ export function App() {
   // 用紙の透過 — 既定 75%（新規文書・初期起動）。書庫・下書き・
   // 履歴スナップには値ごと保存されるため復元時は保存値が優先される
   const [pageOpacity, setPageOpacity] = useState(75);
+  // v0.9: 用紙色 — 文書設定。白固定から任意色+透過へ
+  // （ダークテーマでは暗い紙＋明るい文字の組合せにする）
+  const [paperColor, setPaperColor] = useState('#ffffff');
   const [footer, setFooter] = useState(false);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activePage, setActivePage] = useState(0);
@@ -480,6 +484,7 @@ export function App() {
     footer: boolean;
     title: string;
     pageOpacity: number;
+    paperColor: string;
     docFont: string;
     pageNum: boolean;
     gridPrint: boolean;
@@ -761,7 +766,7 @@ export function App() {
     engine.setDoc({
       ...engine.doc,
       objects: [
-        ...pageObjects(next, pageOpacity / 100, curAxis()),
+        ...pageObjects(next, pageOpacity / 100, curAxis(), paperColor),
         ...content,
       ],
     });
@@ -940,6 +945,7 @@ export function App() {
     footer,
     title: docTitle,
     pageOpacity,
+    paperColor,
     docFont,
     pageNum,
     gridPrint,
@@ -957,7 +963,12 @@ export function App() {
     engine.setDoc({
       ...engine.doc,
       objects: [
-        ...pageObjects(s.model, s.pageOpacity / 100, curAxis()),
+        ...pageObjects(
+          s.model,
+          s.pageOpacity / 100,
+          curAxis(),
+          s.paperColor,
+        ),
         ...uncanon(s.objects, s.model.spec),
       ],
     });
@@ -966,6 +977,7 @@ export function App() {
     setFooter(s.footer);
     setDocTitle(s.title);
     setPageOpacity(s.pageOpacity);
+    setPaperColor(s.paperColor);
     setDocFont(s.docFont);
     setPageNum(s.pageNum);
     setGridPrint(s.gridPrint);
@@ -1015,7 +1027,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -1044,6 +1056,7 @@ export function App() {
           footer: false,
           title: '',
           pageOpacity: 75,
+          paperColor: '#ffffff',
           docFont: DEFAULT_FONT_FAMILY,
           pageNum: true,
           gridPrint: true,
@@ -1063,6 +1076,7 @@ export function App() {
           footer: r.footer,
           title: r.title,
           pageOpacity: r.pageOpacity,
+          paperColor: r.paperColor,
           docFont: r.docFont ?? DEFAULT_FONT_FAMILY,
           pageNum: r.pageNum,
           gridPrint: r.gridPrint,
@@ -1103,6 +1117,7 @@ export function App() {
           title: docTitle,
           createdAt: createdAtRef.current,
           pageOpacity,
+          paperColor,
           docFont,
           pageNum,
           gridPrint,
@@ -1123,7 +1138,7 @@ export function App() {
     }, 1500);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor]);
 
   // v0.4: 執筆モードのホイール横送り — ページは右→左に並ぶので
   // ホイール（deltaY やトラックパッド deltaX）は横パンへ向ける。
@@ -1199,14 +1214,14 @@ export function App() {
               ...o,
               style: {
                 ...(o.style ?? {}),
-                fill: `rgba(255,255,255,${pageOpacity / 100})`,
+                fill: gridLineCss(paperColor, pageOpacity / 100),
               },
             }
           : o,
       ),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageOpacity]);
+  }, [pageOpacity, paperColor]);
 
   const newDoc = () => {
     if (!window.confirm(t('confirm.new'))) return;
@@ -1217,6 +1232,7 @@ export function App() {
     setFooter(false);
     setDocTitle('');
     setPageOpacity(75);
+    setPaperColor('#ffffff');
     setDocFont(DEFAULT_FONT_FAMILY);
     setPageNum(true);
     setGridPrint(true);
@@ -1242,6 +1258,7 @@ export function App() {
       title: docTitle,
       createdAt: createdAtRef.current,
       pageOpacity,
+      paperColor,
       docFont,
       pageNum,
       gridPrint,
@@ -1294,6 +1311,7 @@ export function App() {
     setFooter(r.footer);
     setDocTitle(r.title);
     setPageOpacity(r.pageOpacity);
+    setPaperColor(r.paperColor ?? '#ffffff');
     setDocFont(r.docFont ?? DEFAULT_FONT_FAMILY);
     setPageNum(r.pageNum);
     setGridPrint(r.gridPrint);
@@ -2875,6 +2893,23 @@ export function App() {
             )
           }
           onAreaData={(patch) => {
+            // v0.9: 執筆モードの文字色は本文全体へ伝播（ダーク
+            // テーマで白系へ一括変更する用途。1連鎖が複数頁に
+            // 跨るのに先頭エリアだけ変えるのは誤適用のもと）
+            if (writeMode && patch.color !== undefined) {
+              engine.setDoc({
+                ...engine.doc,
+                objects: engine.doc.objects.map((o) => {
+                  if (o.kind !== TEXT_KIND) return o;
+                  const d = o.data as TextAreaData | undefined;
+                  return {
+                    ...o,
+                    data: { ...DEFAULT_TEXT_DATA, ...d, ...patch },
+                  };
+                }),
+              });
+              return;
+            }
             // 執筆モードはキャンバス非選択なので先頭エリアを対象にする
             const o = writeMode ? writeArea : selObj;
             if (o) patchAreaData(o.id, patch);
@@ -2940,6 +2975,8 @@ export function App() {
             onFooter: setFooter,
             pageOpacity,
             onOpacity: setPageOpacity,
+            paperColor,
+            onPaperColor: setPaperColor,
             font: docFont,
             onFont: applyDocFont,
             pageNum,

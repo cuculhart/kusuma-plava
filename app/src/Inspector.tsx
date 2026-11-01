@@ -245,6 +245,9 @@ export function RightDock({
     onInsertAfter: (index: number) => void;
     onFooter: (on: boolean) => void;
     onOpacity: (v: number) => void;
+    /** v0.9: 用紙色（#rrggbb） */
+    paperColor: string;
+    onPaperColor: (c: string) => void;
     /** ドキュメント既定フォント — 本文書体の文書レベル設定。
         変更は自動生成の執筆枠（auto/genko）と、執筆モードでは
         全テキストエリアへ即時適用される（App.tsx applyDocFont）。
@@ -798,6 +801,8 @@ function DocProps({
   onInsertAfter,
   onFooter,
   onOpacity,
+  paperColor,
+  onPaperColor,
   font,
   onFont,
   pageNum,
@@ -836,6 +841,8 @@ function DocProps({
   onInsertAfter: (index: number) => void;
   onFooter: (on: boolean) => void;
   onOpacity: (v: number) => void;
+  paperColor: string;
+  onPaperColor: (c: string) => void;
   font: string;
   onFont: (s: string) => void;
   pageNum: boolean;
@@ -1102,17 +1109,26 @@ function DocProps({
           />
           {Math.round(gridBgAlpha * 100)}%
         </div>
-        <label>
+        {/* v0.9: 用紙色＋透過 — 白固定から任意色へ
+            （ダークテーマでは暗い紙＋明るい文字の組合せ） */}
+        <div className="ins-row">
+          {t('doc.paperColor')}
+          <input
+            type="color"
+            value={paperColor}
+            onChange={(e) => onPaperColor(e.currentTarget.value)}
+          />
           {t('doc.opacity')}
           <input
             type="range"
             min={0}
             max={100}
+            style={{ width: 90 }}
             value={pageOpacity}
             onChange={(e) => onOpacity(+e.currentTarget.value)}
-          />{' '}
+          />
           {pageOpacity}%
-        </label>
+        </div>
         <label>
           {t('doc.font')}
           <FontPick value={font} onPick={onFont} t={t} />
