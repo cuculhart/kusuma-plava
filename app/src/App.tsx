@@ -2059,8 +2059,9 @@ export function App() {
   };
 
   // ── v0.7: 柱のページローカル配置（mm） ──
-  // 天の余白に縦書き1段で出す。欄の右辺は升目枠の右辺（枠はページ
-  // 左右中央寄せ → 右辺 = (用紙幅 − 枠幅)/2）、高さは枠の上辺まで。
+  // 天の余白に横書き1行で出す（書籍の柱は横書きが一般的）。
+  // 欄の右辺は升目枠の右辺（枠はページ左右中央寄せ →
+  // 右辺 = (用紙幅 − 枠幅)/2）。
   // 升目が組めない用紙では版面（HANMEN_MARGIN+PAD の内側）へ畳む。
   // 版面の外側に置く飾りなので fit()/flow の計算には関与しない
   const hashiraRect = (() => {
@@ -2128,7 +2129,6 @@ export function App() {
             style={{
               top: hashiraRect.top * MM_PX * z,
               right: hashiraRect.right * MM_PX * z,
-              height: hashiraRect.height * MM_PX * z,
               fontSize: Math.max(9, hashiraRect.size * MM_PX * z),
               fontFamily: docFont,
             }}

@@ -1403,25 +1403,25 @@ body,
   pointer-events: none;
 }
 
-/* v0.7: 柱 — 天余白・升目枠右辺揃えの縦書き1段。
-   位置・高さ・字サイズは inline mm（用紙+升目仕様から算出） */
+/* v0.7: 柱 — 天余白・升目枠右辺揃えの横書き1行（書籍の柱は
+   横書きが一般的）。位置・字サイズは inline mm（用紙+升目仕様から算出） */
 .hashira {
   position: absolute;
-  writing-mode: vertical-rl;
   line-height: 1;
   color: #333;
   overflow: hidden;
   white-space: nowrap;
+  text-align: right;
 }
 
 /* キャンバス側の柱（文書設定に文字列があるときのみ出す — .hashira と同じ位置） */
 .hashira-canvas {
   position: absolute;
-  writing-mode: vertical-rl;
   line-height: 1;
   color: var(--muted);
   overflow: hidden;
   white-space: nowrap;
+  text-align: right;
   pointer-events: none;
 }
 

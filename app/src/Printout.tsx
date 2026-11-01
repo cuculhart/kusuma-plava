@@ -399,7 +399,6 @@ export function Printout({
                 style={{
                   top: `${hashiraRect.top}mm`,
                   right: `${hashiraRect.right}mm`,
-                  height: `${hashiraRect.height}mm`,
                   fontSize: `${hashiraRect.size}mm`,
                   fontFamily: hashiraFont,
                 }}
