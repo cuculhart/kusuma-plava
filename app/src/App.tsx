@@ -290,7 +290,12 @@ function buildWritingDoc(font: string): {
       id: areaIds[i],
       kind: TEXT_KIND,
       ...rect,
-      style: { stroke: 'rgba(90,110,140,0.4)' },
+      // fill は他の枠生成経路（genkoAreaObjs）と同じ既定 —
+      // 持たないと P1 だけ塗りの有無がずれる
+      style: {
+        stroke: 'rgba(90,110,140,0.4)',
+        fill: gridLineCss(DEFAULT_GRID_BG, 0),
+      },
       // 既定は縦書き（v0.1 の新規エリア既定と同じ）
       data: {
         ...DEFAULT_TEXT_DATA,
