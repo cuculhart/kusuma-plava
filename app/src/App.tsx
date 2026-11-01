@@ -530,6 +530,7 @@ export function App() {
   );
   // v0.3: 自動保存した下書きの時刻（「下書き HH:MM」表示用）
   const [draftAt, setDraftAt] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   // 起動時の下書き確認が済むまで自動保存を走らせない
   // （確認前に空ドキュメントを保存して下書きを上書きするのを防ぐ）
   const draftReadyRef = useRef(false);
@@ -3389,15 +3390,24 @@ export function App() {
           const f = e.currentTarget.files?.[0];
           e.currentTarget.value = '';
           if (!f) return;
+          // 長文の流れ込みは重い — まず進行中オーバーレイを
+          // 描いてから次フレームで流す（描けなければハングに見える）
+          setBusy(t('hint.importing'));
           f.text().then((text) => {
-            const target = writeChain ?? chains[0];
-            if (!target) return;
-            setChains((cs) =>
-              cs.map((c) =>
-                c.id === target.id ? { ...c, text } : c,
-              ),
+            requestAnimationFrame(() =>
+              setTimeout(() => {
+                const target = writeChain ?? chains[0];
+                if (target) {
+                  setChains((cs) =>
+                    cs.map((c) =>
+                      c.id === target.id ? { ...c, text } : c,
+                    ),
+                  );
+                  flash(tf(t, 'hint.imported', f.name));
+                }
+                setBusy(null);
+              }, 30),
             );
-            flash(tf(t, 'hint.imported', f.name));
           });
         }}
       />
@@ -3408,6 +3418,11 @@ export function App() {
         style={{ display: 'none' }}
         onChange={onOpenFile}
       />
+      {busy && (
+        <div className="dlg-backdrop">
+          <div className="dlg busy">{busy}</div>
+        </div>
+      )}
       {imgDlg && (
         <div className="dlg-backdrop">
           <div className="dlg">

@@ -84,6 +84,7 @@ const ja = {
   'hint.draftRestored': '下書きを復元しました',
   'hint.exported': 'テキストを書き出しました',
   'hint.imported': '$1 を読み込みました',
+  'hint.importing': '読み込み中…',
   // 目標字数（v0.3）
   'write.goal': '目標',
   'write.goalChars': '字',
@@ -324,6 +325,7 @@ const en: Record<keyof typeof ja, string> = {
   'hint.draftRestored': 'Draft restored',
   'hint.exported': 'Text exported',
   'hint.imported': '$1 imported',
+  'hint.importing': 'Importing…',
   'write.goal': 'Goal',
   'write.goalChars': 'chars',
   'write.goalCharsTip': 'Target character count (0 = unset)',
