@@ -1984,10 +1984,14 @@ export function App() {
     const sl = layouts
       .get(writeChain.id)
       ?.slices.find((s) => s.areaId === inside[0].id);
-    return sl && sl.text === '' ? last.id : null;
+    // 空白のみ（改行後の字下げ全角スペース等）も空扱い — さもないと
+    // 末尾に「　」だけ載った空ページが残ってしまう
+    return sl && sl.text.trim() === '' ? last.id : null;
   })();
   useEffect(() => {
-    if (wcOverflow.length > 0) {
+    // あふれが空白だけなら追加しない — 追加すると空ページを
+    // 削る処理と無限ループになる
+    if (wcOverflow.length > 0 && wcOverflow.trim() !== '') {
       appendPage();
       return;
     }
