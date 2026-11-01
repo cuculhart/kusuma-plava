@@ -844,7 +844,7 @@ export function App() {
     );
     const inside = new Set<string>();
     const objs = engine.doc.objects.filter((o) => {
-      if (o.kind === PAGE_KIND || !pr) return true;
+      if (!pr) return true;
       const cx = o.x + o.w / 2;
       const cy = o.y + o.h / 2;
       const hit =
@@ -852,8 +852,10 @@ export function App() {
         cx < pr.x + pr.w &&
         cy >= pr.y &&
         cy < pr.y + pr.h;
-      if (hit) inside.add(o.id);
-      return !hit;
+      if (!hit) return true;
+      // 消すページの枠自身も除去 — 残すと空の紙だけの残影が出る
+      if (o.kind !== PAGE_KIND) inside.add(o.id);
+      return false;
     });
     if (inside.size)
       setChains((cs) =>
