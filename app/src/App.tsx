@@ -1317,7 +1317,7 @@ export function App() {
 
   const newDoc = () => {
     if (!window.confirm(t('confirm.new'))) return;
-    const d = buildWritingDoc(docFont);
+    const d = buildWritingDoc(DEFAULT_FONT_FAMILY);
     commitPages(d.model, uncanon(d.objects, d.model.spec));
     setChains(d.chains);
     setWriteChainId(null);
