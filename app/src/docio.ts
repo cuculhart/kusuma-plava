@@ -1,4 +1,5 @@
-// 独自書庫形式 — .slm（zip: doc.json + img/ バイナリ）
+// 独自書庫形式 — .chkpf（cucul hart kusuma plava format。
+// zip: doc.json + img/ バイナリ。旧称 .slm — 読込は両対応）
 // 画像オブジェクトの dataURL は書庫化時に img/N.ext へ分離し、
 // data.url を 'asset:img/N.ext' 参照に置き換える。
 
@@ -39,7 +40,7 @@ function unpackMargins(doc: ArchiveDoc): PageMargins | undefined {
   if (okMm(u)) return { top: u, bottom: u, inside: u, outside: u };
   return undefined;
 }
-export const ARCHIVE_EXT = '.slm';
+export const ARCHIVE_EXT = '.chkpf';
 
 interface ArchiveDoc {
   format: string;

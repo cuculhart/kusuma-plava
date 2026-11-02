@@ -81,3 +81,88 @@ describe('parseAozora — 青空注記 → text + marks', () => {
     expect(r.handled + r.dropped).toBe(0);
   });
 });
+
+describe('parseAozora — 画像注記（v0.9）', () => {
+  it('標準形: 説明・ファイル名・横×縦を抽出し注記は除去', () => {
+    const r = parseAozora('前。\n［＃庭の図（fig01.png、横400×縦300）入る］\n後。');
+    expect(r.text).toBe('前。\n\n後。');
+    expect(r.images).toEqual([
+      { pos: 3, alt: '庭の図', file: 'fig01.png', w: 400, h: 300 },
+    ]);
+    expect(r.handled).toBe(1);
+    expect(r.dropped).toBe(0);
+  });
+
+  it('旧式（サイズ省略）: w/h=0 で記録', () => {
+    const r = parseAozora('［＃挿絵（fig.png）入る］');
+    expect(r.text).toBe('');
+    expect(r.images).toEqual([
+      { pos: 0, alt: '挿絵', file: 'fig.png', w: 0, h: 0 },
+    ]);
+  });
+
+  it('キャプション付きの図: 説明は原文のまま alt へ', () => {
+    const r = parseAozora(
+      '［＃「表題」のキャプション付きの図（fig2.jpg、横100×縦80）入る］',
+    );
+    expect(r.images).toEqual([
+      {
+        pos: 0,
+        alt: '「表題」のキャプション付きの図',
+        file: 'fig2.jpg',
+        w: 100,
+        h: 80,
+      },
+    ]);
+  });
+
+  it('全角数字の横×縦も読める', () => {
+    const r = parseAozora('［＃地図（map.png、横４００×縦３００）入る］');
+    expect(r.images[0]).toMatchObject({ w: 400, h: 300 });
+  });
+});
+
+describe('parseAozora — キャプション注記（v0.9）', () => {
+  it('前方参照型: 直前の対象へ小字 fontSize mark', () => {
+    const r = parseAozora('図一の説明［＃「図一の説明」はキャプション］', {
+      captionFs: 3,
+    });
+    expect(r.text).toBe('図一の説明');
+    expect(r.marks).toEqual([
+      { start: 0, end: 5, attrs: { fontSize: 3 } },
+    ]);
+    expect(r.handled).toBe(1);
+    expect(r.dropped).toBe(0);
+  });
+
+  it('開始/終了型: 囲まれた範囲へ小字 fontSize mark', () => {
+    const r = parseAozora(
+      '前［＃キャプション］図の説明［＃キャプション終わり］後',
+      { captionFs: 3 },
+    );
+    expect(r.text).toBe('前図の説明後');
+    expect(r.marks).toEqual([
+      { start: 1, end: 5, attrs: { fontSize: 3 } },
+    ]);
+  });
+
+  it('複数行型: 注記行を畳んで囲まれた範囲へ mark', () => {
+    const r = parseAozora(
+      '前。\n［＃ここからキャプション］\n図の説明\n［＃ここでキャプション終わり］\n後。',
+      { captionFs: 3 },
+    );
+    expect(r.text).toBe('前。\n図の説明\n後。');
+    // 範囲はブロック行末の改行まで含む（行ごと小字の帯として扱う）
+    expect(r.marks).toEqual([
+      { start: 3, end: 8, attrs: { fontSize: 3 } },
+    ]);
+    expect(r.handled).toBe(2);
+  });
+
+  it('閉じない開始注記は文書末までを範囲とみなす', () => {
+    const r = parseAozora('［＃キャプション］残り全部', { captionFs: 3 });
+    expect(r.marks).toEqual([
+      { start: 0, end: 4, attrs: { fontSize: 3 } },
+    ]);
+  });
+});

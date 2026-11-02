@@ -109,12 +109,29 @@ export function Printout({
               const top = o.y - pr.y;
               if (o.kind === IMG_KIND) {
                 const d = o.data as ImageData;
+                // v0.9: 未割当のプレースホルダ枠 — 編集画面と同じく
+                // 破線枠＋説明文で出す（WYSIWYG。未割当が分かる）
+                if (d.placeholder && !d.url)
+                  return (
+                    <div
+                      key={o.id}
+                      className="parea img-ph-print"
+                      style={{
+                        left: `${left}mm`,
+                        top: `${top}mm`,
+                        width: `${o.w}mm`,
+                        height: `${o.h}mm`,
+                      }}
+                    >
+                      <span>{d.placeholder.alt || d.placeholder.file}</span>
+                    </div>
+                  );
                 return (
                   <img
                     key={o.id}
                     className="parea"
                     src={d.url}
-                    alt=""
+                    alt={d.placeholder?.alt ?? ''}
                     style={{
                       left: `${left}mm`,
                       top: `${top}mm`,
@@ -268,6 +285,7 @@ export function Printout({
                         a?.underline || a?.link ? 'underline' : undefined,
                       textEmphasis: a?.boten ? 'sesame' : undefined,
                     },
+                    boten: a?.boten,
                     // 印刷は <a> で出す → PDF 書き出しでリンクが生きる
                     link: a?.link,
                     title: a?.link,

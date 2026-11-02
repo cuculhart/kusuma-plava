@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
+import { unzipSync } from 'fflate';
 import { IsleCanvas, useEngine, useEngineVersion } from '@kimetron/react';
 import { formatLength, type Engine, type WorldObject } from '@kimetron/core';
 import {
@@ -46,7 +47,7 @@ import { PageNav } from './PageNav';
 import { Printout } from './Printout';
 import { Rulers } from './Rulers';
 import { makeT, tf, type Lang } from './i18n';
-import { packArchive, unpackArchive } from './docio';
+import { ARCHIVE_EXT, packArchive, unpackArchive } from './docio';
 import { loadDraft, saveDraft } from './autosave';
 import { createCanvasMeasurer } from './measure';
 import { vunitSpans, type VStyle } from './vtrender';
@@ -120,6 +121,27 @@ function areaObstacles(
     const q = liveRect(engine, o);
     if (q.x >= ix + iw || q.x + q.w <= ix || q.y >= iy + ih || q.y + q.h <= iy)
       continue;
+    // v0.9: noWrap の画像は回り込みせずブロック扱い — 縦版は
+    // 画像の段範囲を全高で占有（画像下の余白も回しこみ禁止。
+    // 本文は画像の左へだけ流れる）、横版は縦帯を全幅で占有し
+    // テキストは画像の上下のみ流れる。
+    // ※注記由来の「次の段〜画像段数ぶん」の予約は注記から導く
+    //   ゾーン障害が担う（layouts 側で付与）— この帯は画像が
+    //   次頁へ送られた場合に画像自身の段を塞ぐ役目
+    if (o.kind === IMG_KIND && (o.data as ImageData).noWrap) {
+      // 縦版の注記枠は注記ゾーンが塞ぐ — 自身の帯は立てない
+      // （帯が画像に追従すると 帯→組版→ゾーン→アンカー→帯 と
+      // 循環して振動する）。横版は縦帯を全幅で占有
+      const ph2 = (o.data as ImageData).placeholder;
+      const vert = (self.data as TextAreaData).writing === 'vertical-rl';
+      if (vert && ph2) continue;
+      out.push(
+        vert
+          ? { x: q.x - ix, y: 0, w: q.w, h: ih }
+          : { x: 0, y: q.y - iy, w: iw, h: q.h },
+      );
+      continue;
+    }
     out.push({ x: q.x - ix, y: q.y - iy, w: q.w, h: q.h });
   }
   return out.length ? out : undefined;
@@ -499,7 +521,7 @@ export function App() {
   const [indent, setIndent] = useState(
     () => localStorage.getItem('kusuma-indent') !== '0',
   );
-  // v0.3: ページ番号（ノンブル）— 文書設定。.slm の doc.json へ保存。
+  // v0.3: ページ番号（ノンブル）— 文書設定。書庫の doc.json へ保存。
   // 新規文書は既定 ON（書庫・下書きは保存値をそのまま使う）
   const [pageNum, setPageNum] = useState(true);
   // v0.3: 升目の印刷出し分け — 文書設定。既定 ON（WYSIWYG 整合:
@@ -580,6 +602,11 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const openFileRef = useRef<HTMLInputElement>(null);
   const textFileRef = useRef<HTMLInputElement>(null);
+  // v0.9: 青空文庫 ZIP 読込 — 同梱画像を basename → dataURL で保持し、
+  // 注記 file と一致する未割当空枠へ自動充填する
+  const aozoraZipRef = useRef<HTMLInputElement>(null);
+  const aozoraImgRef = useRef(new Map<string, string>());
+  const aozoraImgBusy = useRef(new Set<string>());
   const chainsRef = useRef(chains);
   chainsRef.current = chains;
   const linkModeRef = useRef(linkMode);
@@ -590,6 +617,9 @@ export function App() {
   spreadRef.current = spread;
   const placingRef = useRef(placing);
   placingRef.current = placing;
+  // setTimeout 内で最新の model を参照する（自動頁追加の競合対策）
+  const modelRef = useRef(model);
+  modelRef.current = model;
   const measurerRef = useRef(createCanvasMeasurer());
   // v0.7: ページビューア — 一度だけ bind されるホイール/リサイズ
   // ハンドラが最新の現ページ・focusPage を参照するための ref
@@ -633,15 +663,17 @@ export function App() {
   // ── 初期化: ページ枠 + デモの連鎖エリア ──
   useEffect(() => {
     // 執筆モードではキャンバス上のオブジェクト選択・ドラッグを抑止する
-    // （レイアウト編集は組版モード側の仕事 — 執筆ペインは別駆動）
+    // （レイアウト編集は組版モード側の仕事 — 執筆ペインは別駆動）。
+    // 例外: 画像は執筆モードでも触れる（v0.9 — 挿絵の差し込み・
+    // 移動・リサイズ・削除を執筆中に行えるようにする）
     engine.hitFilter = (o) =>
       o.kind !== PAGE_KIND &&
       !linkModeRef.current &&
-      !writeModeRef.current;
+      (!writeModeRef.current || o.kind === IMG_KIND);
     engine.marqueeFilter = (o) =>
       o.kind !== PAGE_KIND &&
       !linkModeRef.current &&
-      !writeModeRef.current;
+      (!writeModeRef.current || o.kind === IMG_KIND);
     // kimetron 1.6.0: アスペクト比ロック画像は角リサイズで比率を保持
     engine.resizeAspect = (o) =>
       o.kind === IMG_KIND && (o.data as ImageData)?.lock
@@ -741,14 +773,25 @@ export function App() {
         return;
       }
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-      // 執筆モードではオブジェクト削除・ワイヤー切断を抑止
-      if (writeModeRef.current) return;
+      // ワイヤー切断は組版モード専用。オブジェクト削除は hitFilter が
+      // 許すものだけ — 執筆モードでは画像のみ選択可能なので
+      // 画像の削除は執筆中でも有効（v0.9）
       if (selLink) {
+        if (writeModeRef.current) return;
         setChains((cs) =>
           unlinkAt(cs, selLink.chainId, selLink.index, nextId('c')),
         );
         setSelLink(null);
       } else {
+        // 注記と対応付いた画像は注記も除去（残すと空枠が復活する）
+        removeLinkedNotes(
+          engine.doc.objects.filter(
+            (o) =>
+              engine.selectedIds.has(o.id) &&
+              o.kind === IMG_KIND &&
+              !!(o.data as ImageData).placeholder?.chain,
+          ),
+        );
         engine.removeSelected();
       }
     };
@@ -767,39 +810,79 @@ export function App() {
         if (!editable) pasteSel();
         return;
       }
-      if (editable) return; // 外部テキストのネイティブ貼り付けを通す
+      // 外部テキストのネイティブ貼り付けは入力欄へ通す — ただし
+      // 画像は入力欄へ入れられないため、画像を含む場合は常に
+      // オブジェクト化する（執筆モードで textarea にフォーカスが
+      // 残っていても画像貼り付けが飲み込まれないようにする）
       const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const it of items) {
-        if (!it.type.startsWith('image/')) continue;
-        const file = it.getAsFile();
-        if (!file) continue;
-        e.preventDefault();
-        const rd = new FileReader();
-        rd.onload = () => {
-          const url = rd.result as string;
-          const img = new Image();
-          img.onload = () => {
-            const aspect = img.naturalHeight / img.naturalWidth;
+      const imgItem = items
+        ? [...items].find((it) => it.type.startsWith('image/'))
+        : undefined;
+      if (editable && !imgItem) return;
+      if (!imgItem) return;
+      const file = imgItem.getAsFile();
+      if (!file) return;
+      e.preventDefault();
+      const rd = new FileReader();
+      rd.onload = () => {
+        const url = rd.result as string;
+        const img = new Image();
+        img.onload = () => {
+          const aspect = img.naturalHeight / img.naturalWidth;
+          // v0.9: 選択中の空枠があれば新規生成ではなく枠へ充填
+          const ph = selectedPlaceholder();
+          if (ph) {
+            fillPlaceholder(ph, url, aspect);
+            return;
+          }
+          if (writeModeRef.current) {
+            // 執筆モード: クリック位置が空枠上ならその枠へ充填。
+            // それ以外はゴースト追従 → クリックで配置位置を決める
+            const p = lastClickRef.current;
+            const under =
+              p &&
+              engine.doc.objects.find(
+                (o) =>
+                  o.kind === IMG_KIND &&
+                  !!(o.data as ImageData).placeholder &&
+                  !(o.data as ImageData).url &&
+                  p.x >= o.x &&
+                  p.x < o.x + o.w &&
+                  p.y >= o.y &&
+                  p.y < o.y + o.h,
+              );
+            if (under) {
+              fillPlaceholder(under, url, aspect);
+              return;
+            }
             const w = Math.min(100, img.naturalWidth / MM_PX);
-            const p = lastClickRef.current ?? { x: 30, y: 30 };
-            const id = nextId('im');
-            engine.addObject({
-              id,
-              kind: IMG_KIND,
-              x: p.x,
-              y: p.y,
-              w,
-              h: w * aspect,
-              data: { url, aspect, lock: true } satisfies ImageData,
-            });
-            engine.setSelection([id]);
-          };
-          img.src = url;
+            setPlacing({ url, w, h: w * aspect, aspect, lock: true });
+            return;
+          }
+          const w = Math.min(100, img.naturalWidth / MM_PX);
+          const p = lastClickRef.current ?? { x: 30, y: 30 };
+          const under = placeholderAt(p);
+          if (under) {
+            fillPlaceholder(under, url, aspect);
+            return;
+          }
+          const id = nextId('im');
+          const s = snapToAreaEdge({ x: p.x, y: p.y, w, h: w * aspect });
+          engine.addObject({
+            id,
+            kind: IMG_KIND,
+            x: s.x,
+            y: s.y,
+            w: s.w,
+            h: s.h,
+            data: { url, aspect, lock: true } satisfies ImageData,
+          });
+          engine.setSelection([id]);
+          linkImageNote(id);
         };
-        rd.readAsDataURL(file);
-        return;
-      }
+        img.src = url;
+      };
+      rd.readAsDataURL(file);
     };
     // アプリ内コピー時は OS クリップボードへマーカーを書き込み、
     // 残り物（画像等）が Ctrl+V で紛れ込まないようにする。
@@ -1018,7 +1101,7 @@ export function App() {
     if (r) removePage(r.id);
   };
 
-  // ── ファイル操作（.slm 書庫） ──
+  // ── ファイル操作（書庫ファイル） ──
   const contentObjects = () =>
     engine.doc.objects.filter((o) => o.kind !== PAGE_KIND);
 
@@ -1209,7 +1292,7 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine]);
 
-  // ── v0.3: 自動保存 — 変更のたびに 1.5s デバウンスで .slm と同じ
+  // ── v0.3: 自動保存 — 変更のたびに 1.5s デバウンスで書庫と同じ
   // 直列化（画像込みの完全な文書状態）を IndexedDB へ下書き保存する ──
   useEffect(() => {
     if (!draftReadyRef.current) return;
@@ -1422,13 +1505,15 @@ export function App() {
       }),
     );
     a.href = url;
-    a.download = name.endsWith('.slm') ? name : `${name}.slm`;
+    a.download = name.endsWith(ARCHIVE_EXT)
+      ? name
+      : `${name}${ARCHIVE_EXT}`;
     a.click();
     URL.revokeObjectURL(url);
     dirtyRef.current = false;
     setSaveDlg(null);
   };
-  // 書庫の展開結果をアプリ状態へ反映する（.slm 読込と下書き復元で共用）
+  // 書庫の展開結果をアプリ状態へ反映する（書庫読込と下書き復元で共用）
   const applyArchive = (r: ReturnType<typeof unpackArchive>) => {
     // 過去バージョンで別グループへ同じ gN が振られて保存された
     // 汚染を修復する — 同名グループをページ単位で分割し連番化
@@ -1629,19 +1714,27 @@ export function App() {
     // 画像配置: ゴースト位置にクリック確定
     if (placingRef.current && ghost) {
       const p = placingRef.current;
+      const under = placeholderAt(ghost);
+      setPlacing(null);
+      setGhost(null);
+      // ドロップ点が未割当の空枠内なら新規生成ではなくその枠へ充填
+      if (under) {
+        fillPlaceholder(under, p.url, p.aspect);
+        return;
+      }
       const id = nextId('im');
+      const s = snapToAreaEdge({ x: ghost.x, y: ghost.y, w: p.w, h: p.h });
       engine.addObject({
         id,
         kind: IMG_KIND,
-        x: ghost.x,
-        y: ghost.y,
-        w: p.w,
-        h: p.h,
+        x: s.x,
+        y: s.y,
+        w: s.w,
+        h: s.h,
         data: { url: p.url, aspect: p.aspect, lock: p.lock } satisfies ImageData,
       });
-      setPlacing(null);
-      setGhost(null);
       engine.setSelection([id]);
+      linkImageNote(id);
       return;
     }
     const objEl = (e.target as HTMLElement).closest?.(
@@ -1713,6 +1806,14 @@ export function App() {
       const url = String(reader.result);
       const probe = new Image();
       probe.onload = () => {
+        const aspect = probe.naturalHeight / probe.naturalWidth;
+        // v0.9: 選択中の空枠があればダイアログ・配置操作を
+        // 飛ばしてその枠へ直接充填する
+        const ph = selectedPlaceholder();
+        if (ph) {
+          fillPlaceholder(ph, url, aspect);
+          return;
+        }
         setImgDlg({
           url,
           natW: probe.naturalWidth,
@@ -1760,6 +1861,334 @@ export function App() {
     patchObject(id, { data: { ...(o.data as ImageData), ...patch } });
   };
 
+  // v0.9: 選択中の空枠（青空画像注記のプレースホルダ）— 画像の
+  // 貼り付け・ファイル読込は新規オブジェクト生成ではなく
+  // この枠への充填へ分岐する
+  const selectedPlaceholder = () =>
+    [...engine.selectedIds]
+      .map((sid) => engine.doc.objects.find((x) => x.id === sid))
+      .find(
+        (x): x is WorldObject =>
+          !!x &&
+          x.kind === IMG_KIND &&
+          !!(x.data as ImageData).placeholder &&
+          !(x.data as ImageData).url,
+      );
+  // 空枠へ画像を充填 — 幅は注記由来の枠のまま、高さは実画像の
+  // アスペクトへ合わせ直す（placeholder は出自情報として残す）
+  const fillPlaceholder = (ph: WorldObject, url: string, aspect: number) => {
+    patchObject(ph.id, {
+      h: ph.w * aspect,
+      data: { ...(ph.data as ImageData), url, aspect, lock: true },
+    });
+  };
+  // 座標上の未割当空枠 — 貼り付け・配置ドロップの充填先判定
+  const placeholderAt = (p: { x: number; y: number }) =>
+    engine.doc.objects.find(
+      (o) =>
+        o.kind === IMG_KIND &&
+        !!(o.data as ImageData).placeholder &&
+        !(o.data as ImageData).url &&
+        p.x >= o.x &&
+        p.x < o.x + o.w &&
+        p.y >= o.y &&
+        p.y < o.y + o.h,
+    );
+
+  // 手動差し込みは版面の一番上/一番下へ吸着（青空のまわりこみ
+  // 規則 — 以降の文章が画像の下へ回り込む形に揃える）。
+  // ドロップ中心がエリア上側なら上端・下側なら下端、横位置は
+  // ドロップ点。エリア外ドロップは自由位置のまま
+  const snapToAreaEdge = (r: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  }) => {
+    const cx = r.x + r.w / 2;
+    const cy = r.y + r.h / 2;
+    const a = engine.doc.objects.find(
+      (o) =>
+        o.kind === TEXT_KIND &&
+        cx >= o.x &&
+        cx < o.x + o.w &&
+        cy >= o.y &&
+        cy < o.y + o.h,
+    );
+    if (!a) return r;
+    // 升目枠の端へ詰める（内側パディングは残さない）
+    const ix = a.x;
+    const iy = a.y;
+    const iw = a.w;
+    const ih = a.h;
+    return {
+      x: Math.max(ix, Math.min(r.x, ix + iw - r.w)),
+      y:
+        cy < iy + ih / 2
+          ? iy
+          : Math.max(iy, iy + ih - r.h),
+      w: r.w,
+      h: r.h,
+    };
+  };
+
+  // 新規配置の画像を青空注記と対応付ける — 画像中心が乗る
+  // テキストエリアの連鎖テキストへ、画像位置に最も近い行境界へ
+  // 独立行で ［＃挿絵（file、横W×縦H）入る］ を挿入し、画像に
+  // placeholder を付ける（空枠同期が別枠を生成しないための印）
+  const linkImageNote = (imgId: string) => {
+    const img = engine.doc.objects.find((o) => o.id === imgId);
+    if (!img) return;
+    const cx = img.x + img.w / 2;
+    const cy = img.y + img.h / 2;
+    const areaObj = engine.doc.objects.find(
+      (o) =>
+        o.kind === TEXT_KIND &&
+        cx >= o.x &&
+        cx < o.x + o.w &&
+        cy >= o.y &&
+        cy < o.y + o.h,
+    );
+    if (!areaObj) return;
+    const c = chainOf(chainsRef.current, areaObj.id);
+    const pz = c && aozora.get(c.id);
+    const sl =
+      c && layouts.get(c.id)?.slices.find((s) => s.areaId === areaObj.id);
+    if (!c || !pz || !sl) return;
+    const d = { ...DEFAULT_TEXT_DATA, ...(areaObj.data as TextAreaData) };
+    const ix = areaObj.x + TEXT_PAD_MM;
+    const iy = areaObj.y + TEXT_PAD_MM;
+    const iw = Math.max(0, areaObj.w - 2 * TEXT_PAD_MM);
+    const ih = Math.max(0, areaObj.h - 2 * TEXT_PAD_MM);
+    // 画像位置 → スライス内の推定オフセット（縦:段×字・横:行×字の近似）
+    let est: number;
+    if (d.writing === 'vertical-rl') {
+      const perCol = Math.max(1, Math.floor(ih / d.fontSize));
+      const col = Math.max(
+        0,
+        Math.floor((ix + iw - cx) / (d.fontSize * (1 + RUBY_LANE_RATIO))),
+      );
+      est = col * perCol + Math.max(0, Math.floor((cy - iy) / d.fontSize));
+    } else {
+      const perLine = Math.max(1, Math.floor(iw / d.fontSize));
+      est =
+        Math.floor((cy - iy) / (d.fontSize * LINE_HEIGHT)) * perLine;
+    }
+    const target = sl.offset + Math.max(0, Math.min(sl.text.length, est));
+    // 最も近い行境界へ吸着（注記は独立行にするため）
+    const back = pz.text.lastIndexOf('\n', target);
+    const fwd = pz.text.indexOf('\n', target);
+    const bs = back < 0 ? 0 : back + 1;
+    const fs = fwd < 0 ? pz.text.length : fwd + 1;
+    const bound = target - bs <= fs - target ? bs : fs;
+    const rawPos = pz.toRaw(bound);
+    const m = /^data:image\/(\w+)/.exec((img.data as ImageData).url);
+    const file = `image.${(m?.[1] ?? 'png').replace('jpeg', 'jpg')}`;
+    const note = `［＃挿絵（${file}、横${Math.round(img.w * MM_PX)}×縦${Math.round(img.h * MM_PX)}）入る］`;
+    const pre = rawPos > 0 && c.text[rawPos - 1] !== '\n' ? '\n' : '';
+    const post =
+      rawPos < c.text.length && c.text[rawPos] !== '\n' ? '\n' : '';
+    setChains((cs) =>
+      cs.map((x) =>
+        x.id === c.id
+          ? {
+              ...x,
+              text:
+                x.text.slice(0, rawPos) +
+                pre +
+                note +
+                post +
+                x.text.slice(rawPos),
+            }
+          : x,
+      ),
+    );
+    patchObject(img.id, {
+      data: {
+        ...(img.data as ImageData),
+        placeholder: { alt: '挿絵', file, chain: c.id, pos: bound },
+      },
+    });
+  };
+
+  // 注記と対応付いた画像の削除 → 注記も除去する
+  // （残すと空枠同期が空枠を復活させてしまう）
+  const removeLinkedNotes = (imgs: WorldObject[]) => {
+    for (const img of imgs) {
+      const ph = (img.data as ImageData).placeholder;
+      if (!ph?.chain) continue;
+      const c = chainsRef.current.find((x) => x.id === ph.chain);
+      const pz = aozora.get(ph.chain);
+      if (!c || !pz) continue;
+      // pos 一致 → 連鎖内 pos 順の index 対応 の順で注記を同定
+      let im = pz.images.find((i) => i.pos === ph.pos);
+      if (!im) {
+        const linked = engine.doc.objects
+          .filter(
+            (o) =>
+              o.kind === IMG_KIND &&
+              (o.data as ImageData)?.placeholder?.chain === c.id,
+          )
+          .sort(
+            (a, b) =>
+              (a.data as ImageData).placeholder!.pos -
+              (b.data as ImageData).placeholder!.pos,
+          );
+        const k = linked.findIndex((o) => o.id === img.id);
+        im = k >= 0 ? pz.images[k] : undefined;
+      }
+      if (!im) continue;
+      const re = pz.toRaw(im.pos);
+      const rs = c.text.lastIndexOf('［＃', re);
+      const close = rs >= 0 ? c.text.indexOf('］', rs) : -1;
+      if (close < 0) continue;
+      // 注記だけの行なら行ごと除去（残ると空行だけが残る）
+      const ls = c.text.lastIndexOf('\n', rs - 1) + 1;
+      const only = /^［＃[^］]*］$/.test(c.text.slice(ls, close + 1));
+      const s = only ? ls : rs;
+      const e = only && c.text[close + 1] === '\n' ? close + 2 : close + 1;
+      setChains((cs) =>
+        cs.map((x) =>
+          x.id === c.id
+            ? { ...x, text: x.text.slice(0, s) + x.text.slice(e) }
+            : x,
+        ),
+      );
+    }
+  };
+
+  // .txt / ZIP 内 txt のデコード — UTF-8 とは限らない
+  // （青空文庫系は Shift-JIS）ため、化けがあれば SJIS で読み直す
+  const decodeAozoraText = (u8: Uint8Array) => {
+    const utf8 = new TextDecoder('utf-8', { fatal: false }).decode(u8);
+    return utf8.includes('�')
+      ? new TextDecoder('shift_jis').decode(u8)
+      : utf8;
+  };
+
+  // .txt 読込の共通部（.txt 直接読込・青空 ZIP 読込で共用）—
+  // 連鎖へ本文を流し、容量が足りなければ頁＋升目枠を一括追加する。
+  // 画像注記の空枠は注記同期エフェクトが後から自動生成する
+  const importChainText = (
+    text: string,
+    name: string,
+    fix?: { spec: PageModel['spec']; genko: GenkoGrid },
+  ) => {
+    const target = writeChain ?? chains[0];
+    if (!target) return void setBusy(null);
+    requestAnimationFrame(() =>
+      setTimeout(() => {
+        // 青空注記は描画側で解釈 — 連鎖テキストは公式 txt の
+        // まま保持する（編集・検索が生文に対して動く）。ここでは
+        // 注記件数の報告のためにパースする。CRLF 改行は \n へ
+        // 正規化 — textarea は値を LF に正規化するため、\r が
+        // 残るとキャレット位置が行数ぶんズレる
+        const src = text.replace(/\r\n?/g, '\n');
+        const parsed = parseAozora(src);
+        const ax = curAxis();
+        const objs = contentObjects();
+        // 判型/升目の強制指定は同じ next に対して適用する —
+        // 外側で setState すると遅延実行が旧 model を捕捉して
+        // 不整合になる（ページが旧 spec で組まれて表示が崩れる）。
+        // setPaper はページ寸法だけなので、既存の升目エリアも
+        // applySpec と同じく refitWritingAreas で新版面へ追従させる
+        const g = fix?.genko ?? genko;
+        let next = model;
+        if (fix?.spec) {
+          next = setPaper(next, fix.spec);
+          const fitted = refitWritingAreas(objs, model, next, ax, margins);
+          objs.length = 0;
+          objs.push(...fitted);
+        }
+        // 既存の升目エリアは自身の data.genko のまま追従するため、
+        // 升目の強制指定があるときは枠ごと差し替える
+        if (fix?.genko) {
+          const nr = pageRects(next.spec, next.pages, ax);
+          for (let i = 0; i < objs.length; i++) {
+            const o = objs[i];
+            const od = o.data as TextAreaData | undefined;
+            if (o.kind !== TEXT_KIND || !od?.genko) continue;
+            const cx = o.x + o.w / 2;
+            const cy = o.y + o.h / 2;
+            const hit = nr.find(
+              (r) =>
+                cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
+            );
+            if (!hit) continue;
+            const f = genkoFrame(
+              next.spec,
+              hit.slot,
+              g,
+              ax,
+              margins,
+              od.col ?? 0,
+            );
+            if (!f) continue;
+            objs[i] = {
+              ...o,
+              x: f.x,
+              y: f.y,
+              w: f.w,
+              h: f.h,
+              data: {
+                ...od,
+                fontSize: f.fontSize,
+                genko: { ...g },
+              },
+            };
+          }
+        }
+        const ids: string[] = [];
+        // 大文書は あふれ→追加 の往復が二乗級に遅い —
+        // 枠容量から必要ページ数を概算して先に一括生成
+        const perPage = Math.max(
+          50,
+          g.cells * g.cols * Math.max(1, g.columns ?? 1),
+        );
+        const need = Math.ceil(text.length / perPage) + 1;
+        while (next.pages.length < need) {
+          next = addPage(next);
+          const slot = next.pages[next.pages.length - 1].slot;
+          for (const a of genkoAreaObjs(
+            next.spec,
+            slot,
+            g,
+            ax,
+            margins,
+          )) {
+            objs.push(a);
+            ids.push(a.id);
+          }
+        }
+        if (ids.length)
+          setChains((cs) =>
+            cs.map((c) =>
+              c.id === target.id
+                ? { ...c, areas: [...c.areas, ...ids] }
+                : c,
+            ),
+          );
+        if (next !== model) commitPages(next, objs);
+        setChains((cs) =>
+          cs.map((c) =>
+            c.id === target.id ? { ...c, text: src, marks: [] } : c,
+          ),
+        );
+        setBusy(null);
+        flash(
+          tf(t, 'hint.imported', name) +
+            (parsed.handled || parsed.dropped
+              ? ' / ' +
+                tf(t, 'hint.aozora', parsed.handled, parsed.dropped)
+              : '') +
+            (parsed.images.length
+              ? ' / ' + tf(t, 'hint.aozoraImg', parsed.images.length)
+              : ''),
+        );
+      }, 30),
+    );
+  };
+
   // ── 文書既定フォントの変更（v0.8）──
   // 「既定フォント」は本文書体の文書レベル設定 — 変更は既存の
   // 執筆テキストへ即時反映し、以後の新規エリア・新ページ枠の
@@ -1788,7 +2217,7 @@ export function App() {
   };
 
   // v0.9: 文書既定の文字色 — applyDocFont と同じ伝播規則
-  // （auto/genko + 執筆モードの全エリアへ即時反映・.slm へ保存）
+  // （auto/genko + 執筆モードの全エリアへ即時反映・書庫へ保存）
   const applyDocColor = (color: string) => {
     setDocColor(color);
     engine.setDoc({
@@ -2092,10 +2521,18 @@ export function App() {
   // 生⇔変換の位置マップで手動マーク・キャレット同期も整合する
   const aozora = useMemo(() => {
     const m = new Map<string, AozoraResult>();
-    const hfs =
-      (genkoFontSize(model.spec, genko, margins) ??
-        DEFAULT_TEXT_DATA.fontSize) * 1.3;
-    for (const c of chains) m.set(c.id, parseAozora(c.text, { headingFs: hfs }));
+    // 見出しは本文×1.3、キャプションは本文×0.8（v0.9）
+    const bfs =
+      genkoFontSize(model.spec, genko, margins) ??
+      DEFAULT_TEXT_DATA.fontSize;
+    for (const c of chains)
+      m.set(
+        c.id,
+        parseAozora(c.text, {
+          headingFs: bfs * 1.3,
+          captionFs: bfs * 0.8,
+        }),
+      );
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chains, model.spec, genko, margins]);
@@ -2119,13 +2556,20 @@ export function App() {
   )
     ? engine.version
     : 0;
-  const { layouts, vflows } = useMemo(() => {
+  const { layouts, vflows, zones } = useMemo(() => {
     const layouts = new Map<string, LayoutResult>();
     // v0.4: 回しこみ — 障害のある縦書きエリアは layoutVertical の
     // 段×区間割当計画を保持し、描画は計画どおり区間を絶対配置する
     // （CSS writing-mode には障害を教えられないため — 案B。
     // 障害無しのスライスは従来どおり CSS 折返しで描く）
     const vflows = new Map<string, VFlow>();
+    // 連鎖→注記index→予約ゾーンの実矩形（inner局所座標）—
+    // 画像はこの矩形へそのまま配置する（anchorOf 側での
+    // 段推定と二重になってずれるのを防ぐ）
+    const zrec = new Map<
+      string,
+      Map<number, { areaId: string; zL: number; zR: number }>
+    >();
     for (const c of chains) {
       const boxes: AreaBox[] = [];
       const boxById = new Map<string, AreaBox>();
@@ -2151,12 +2595,120 @@ export function App() {
         boxById.set(id, box);
       }
       const pz = aozora.get(c.id);
-      const lr = layoutChain(
-        pz?.text ?? c.text,
-        boxes,
-        measurerRef.current,
-        chainMarks(c),
-      );
+      const txt = pz?.text ?? c.text;
+      const marks = chainMarks(c);
+      let lr = layoutChain(txt, boxes, measurerRef.current, marks);
+      // v0.9: 青空画像注記の予約ゾーン — 注記の段の次の段から
+      // 画像段数ぶんを回しこみ禁止にする（収まらないぶんは頁末
+      // まで塞がり改ページ相当 — 案①。ゾーンは注記から導くので
+      // 画像オブジェクトの位置に依存せず安定する）。
+      // 注記は文章順に逐次決定する — 直前のゾーンを入れた組版で
+      // 次の注記の段を求めると、その押し出しを反映した確定位置に
+      // なる（一括で出してから反復するとゾーン同士が位置を
+      // 取り合って発散する）
+      if (pz?.images.length) {
+        const zl = new Map<
+          number,
+          { areaId: string; zL: number; zR: number }
+        >();
+        zrec.set(c.id, zl);
+        pz.images.forEach((img, zi) => {
+          const sl =
+            lr.slices.find(
+              (s) => img.pos < s.offset + s.text.length,
+            ) ?? lr.slices[lr.slices.length - 1];
+          const b = sl && boxById.get(sl.areaId);
+          const ao = sl && objById.get(sl.areaId);
+          const dd =
+            ao &&
+            ({ ...DEFAULT_TEXT_DATA, ...(ao.data as TextAreaData) });
+          if (!sl || !b || !dd || dd.writing !== 'vertical-rl')
+            return;
+          const fs = Math.max(1, dd.fontSize);
+          const pitch = fs * (1 + RUBY_LANE_RATIO);
+          const off = Math.max(
+            0,
+            Math.min(img.pos - sl.offset, sl.text.length),
+          );
+          // 注記の段は推定ではなく実組版の単位割当から取る —
+          // セル数近似だと禁則・段送りで数段ずれて隙間に後続
+          // 本文が入り込む。注記直前の単位が載る段 = 注記の段
+          const lv0 = layoutVertical(sl.text, {
+            ...b,
+            marks,
+            textOffset: sl.offset,
+          });
+          const units = Array.from(tokenizeVertical(sl.text));
+          const lastCol = lv0.segs[lv0.segs.length - 1]?.col ?? 0;
+          // brk 単位はどの seg にも属さない — 後続側は次の seg、
+          // 直前側は前の seg を返す
+          const segOf = (i: number, dir: 1 | -1) =>
+            lv0.segs.find((s) => i >= s.u0 && i < s.u1) ??
+            (dir === 1
+              ? lv0.segs.find((s) => s.u0 > i)
+              : [...lv0.segs].reverse().find((s) => s.u0 < i));
+          const uAt = (p: number) =>
+            units.findIndex((u) => u.start <= p && p < u.start + u.raw);
+          // 画像の開始段 = max(注記直前の字の段 + 1, 後続本文が
+          // 始まる段) — 段落末では後続は次段から始まり、それが
+          // そのまま画像の段になる。途中なら直前の段の次から
+          const colPre =
+            off > 0 ? (segOf(uAt(off - 1), -1)?.col ?? -1) : -1;
+          const iPost =
+            uAt(off) >= 0
+              ? uAt(off)
+              : units.findIndex((u) => u.start > off);
+          const colPost =
+            iPost >= 0 ? (segOf(iPost, 1)?.col ?? lastCol) : lastCol;
+          const col = Math.max(colPre + 1, colPost);
+          // 画像の段数 = ceil(画像幅 / 段ピッチ)。サイズ省略は
+          // 生成時と同じく版面幅60%扱い
+          const imgW = img.w > 0 ? img.w / MM_PX : b.width * 0.6;
+          const k = Math.max(1, Math.ceil(imgW / pitch));
+          const zR = b.width - col * pitch; // = 段 col-1 の左端
+          const zL = Math.max(0, b.width - (col + k) * pitch);
+          const cols = Math.floor(b.width / pitch);
+          const fits = col + k <= cols;
+          // 注記の段〜頁末はゾーンとして塞ぐ（収まらないぶんは
+          // 頁末まで = 改ページ — 後続本文は画像の次の段から）
+          if (zR > zL)
+            b.obstacles = [
+              ...(b.obstacles ?? []),
+              { x: zL, y: 0, w: zR - zL, h: b.height },
+            ];
+          if (fits) {
+            zl.set(zi, { areaId: sl.areaId, zL, zR });
+          } else {
+            // 残り段に収まらない → 次スライスの枠の先頭 k 段を
+            // 画像のゾーンにする（画像はそこへ置かれ、自身の帯は
+            // 不要 — 帯→組版→アンカー→帯 の循環を避ける）
+            const nsl = lr.slices[lr.slices.indexOf(sl) + 1];
+            const nb = nsl && boxById.get(nsl.areaId);
+            if (nb) {
+              const nk = Math.min(
+                k,
+                Math.max(1, Math.floor(nb.width / pitch)),
+              );
+              const nzL = nb.width - nk * pitch;
+              nb.obstacles = [
+                ...(nb.obstacles ?? []),
+                { x: nzL, y: 0, w: nk * pitch, h: nb.height },
+              ];
+              zl.set(zi, {
+                areaId: nb.id,
+                zL: nzL,
+                zR: nb.width,
+              });
+            } else {
+              zl.set(zi, { areaId: sl.areaId, zL, zR });
+            }
+          }
+          // このゾーンによる押し出しを次の注記へ反映するため
+          // その場で組み直す
+          if (zR > zL || !fits)
+            lr = layoutChain(txt, boxes, measurerRef.current, marks);
+        });
+      }
       layouts.set(c.id, lr);
       for (const sl of lr.slices) {
         const b = boxById.get(sl.areaId);
@@ -2172,9 +2724,343 @@ export function App() {
         }
       }
     }
-    return { layouts, vflows };
+    return { layouts, vflows, zones: zrec };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chains, engine.doc.objects, liveGeom, aozora]);
+
+  // ── v0.9: 画像注記 ↔ 空枠の同期 ──
+  // 連鎖テキスト中の画像注記 `［＃説明（file、横○×縦○）入る］` に
+  // 対応する未割当の空枠（placeholder 付き image オブジェクト）を、
+  // 注記の並び順で index 対応させる。.txt 読込・テキスト貼付・
+  // 手編集・書庫復元のいずれの経路でも注記と枠が一致する。
+  // 注記が増えたぶんは注記位置が乗るページの版面中央へ生成、
+  // 消えたぶんは末尾の未割当枠から削除（充填済みは触らない）
+  useEffect(() => {
+    if (applyingRef.current) return;
+    const ax = curAxis();
+    const prs = pageRects(model.spec, model.pages, ax);
+    const objs = engine.doc.objects;
+    const pageOf = (o: WorldObject) => {
+      const cx = o.x + o.w / 2;
+      const cy = o.y + o.h / 2;
+      return prs.find(
+        (p) => cx >= p.x && cx < p.x + p.w && cy >= p.y && cy < p.y + p.h,
+      );
+    };
+    const isEmptyPh = (o: WorldObject) => {
+      const d = o.data as ImageData | undefined;
+      return o.kind === IMG_KIND && !!d?.placeholder && !d.url;
+    };
+    // 出自不明の空枠（chain 未保持の旧形式）— 不足が出た
+    // 連鎖へ先着順で引き取らせる
+    const untagged = objs.filter(
+      (o) => isEmptyPh(o) && !(o.data as ImageData).placeholder!.chain,
+    );
+    const perPage = new Map<string, number>();
+    for (const o of objs) {
+      if (o.kind !== IMG_KIND) continue;
+      const pid = pageOf(o)?.id;
+      if (pid) perPage.set(pid, (perPage.get(pid) ?? 0) + 1);
+    }
+    // 注記位置の段/行を推定して画像の段アンカーを計算する。
+    // 縦書きは注記の段の次の段から画像が始まる（右端=注記段の左端、
+    // 上は升目枠の最上段）。横書きは注記の行の次の行の上端。
+    // 単位数/段高の近似なので正確な折返しとはずれ得るが、
+    // 生成・移動の両方で同じ規則を使う
+    const anchorOf = (
+      sl: { offset: number; text: string },
+      nextSl: { offset: number; text: string; areaId: string } | undefined,
+      ao: WorldObject,
+      imgPos: number,
+      w: number,
+      h: number,
+      n: number,
+      zone?: { zL: number; zR: number },
+    ): { x: number; y: number; next?: boolean } | null => {
+      const d = { ...DEFAULT_TEXT_DATA, ...(ao.data as TextAreaData) };
+      // 注記ゾーンが分かっていればその矩形へ直接置く — 右端を
+      // ゾーン右端に揃え、幅がゾーンに収まらなければ次頁へ送る
+      // （段推定と二重にならずずれない）
+      if (d.writing === 'vertical-rl' && zone) {
+        const x = ao.x + TEXT_PAD_MM + zone.zR - w;
+        if (x >= ao.x + TEXT_PAD_MM + zone.zL) return { x, y: ao.y };
+        const ao2 = nextSl && objs.find((q) => q.id === nextSl.areaId);
+        if (ao2) return { x: ao2.x + ao2.w - w, y: ao2.y, next: true };
+        return { x: ao.x, y: ao.y };
+      }
+      const fs = Math.max(1, d.fontSize);
+      const off = Math.max(0, Math.min(imgPos - sl.offset, sl.text.length));
+      const units = tokenizeVertical(sl.text.slice(0, off));
+      let cells = 0;
+      if (d.writing === 'vertical-rl') {
+        const perCol = Math.max(
+          1,
+          Math.floor((ao.h - 2 * TEXT_PAD_MM) / fs),
+        );
+        for (const u of units) {
+          if (u.kind === 'brk') {
+            const r = cells % perCol;
+            cells += r ? perCol - r : perCol;
+          } else cells += u.cells;
+        }
+        const col = Math.floor(cells / perCol);
+        const pitch = fs * (1 + RUBY_LANE_RATIO);
+        // 注記の段の次の段から — 右端を注記段の左端に揃える。
+        // 残り段に収まらない場合は改ページ — 次スライスの枠の
+        // 先頭段（右端）へ送る（注記の段〜頁末は注記ゾーンが
+        // 塞いでいるので後続本文は画像の次の段から再開する）
+        const right = ao.x + ao.w - TEXT_PAD_MM - (col + 1) * pitch;
+        const x = right - w - n * (w + 2);
+        if (x >= ao.x) return { x, y: ao.y };
+        const ao2 = nextSl && objs.find((q) => q.id === nextSl.areaId);
+        if (ao2) return { x: ao2.x + ao2.w - w, y: ao2.y, next: true };
+        return { x: ao.x, y: ao.y };
+      }
+      const perLine = Math.max(
+        1,
+        Math.floor((ao.w - 2 * TEXT_PAD_MM) / fs),
+      );
+      for (const u of units) {
+        if (u.kind === 'brk') {
+          const r = cells % perLine;
+          cells += r ? perLine - r : perLine;
+        } else cells += u.cells;
+      }
+      const row = Math.floor(cells / perLine);
+      const x = ao.x + Math.max(0, (ao.w - w) / 2);
+      const y = Math.max(
+        ao.y,
+        Math.min(
+          ao.y + TEXT_PAD_MM + (row + 1) * fs * LINE_HEIGHT + n * (h + 2),
+          ao.y + ao.h - h,
+        ),
+      );
+      return { x, y };
+    };
+    const adds: WorldObject[] = [];
+    const drops = new Set<string>();
+    const patches = new Map<string, ImageData>();
+    // 組版変動で枠の頁が注記スライスの頁からずれたぶんの寄せ直し
+    const moves = new Map<
+      string,
+      { x: number; y: number; next?: boolean }
+    >();
+    for (const c of chains) {
+      const imgs = aozora.get(c.id)?.images ?? [];
+      // 対応付けは充填済みの実画像も含める — 配置済み画像に
+      // placeholder が付く（注記挿入で対応づいたもの）ため、
+      // 空枠だけを数えると注記のぶん余分な枠が生まれる
+      const frames = objs
+        .filter((o) => {
+          const d = o.data as ImageData | undefined;
+          return (
+            o.kind === IMG_KIND &&
+            !!d?.placeholder &&
+            d.placeholder.chain === c.id
+          );
+        })
+        .sort(
+          (a, b) =>
+            (a.data as ImageData).placeholder!.pos -
+            (b.data as ImageData).placeholder!.pos,
+        );
+      for (let i = imgs.length; i < frames.length; i++)
+        if (isEmptyPh(frames[i])) drops.add(frames[i].id);
+      // 注記ゾーンは注記から導いて組版へ入っている（layouts の
+      // 2パス）ので、ゾーン込みのスライス位置がそのまま画像の
+      // 宛先になる — 帯抜き再組版は不要（ゾーンは画像位置に
+      // 依存しないため振動しない）
+      const lrF = layouts.get(c.id);
+      for (const o of frames) {
+        const d2 = o.data as ImageData;
+        if (!d2.noWrap || !d2.placeholder) continue;
+        // ドラッグ/リサイズ中はアンカーへ寄せない — 帯の移動で
+        // 組版が揺れてアンカー計算と干渉し振動する
+        if (liveGeom) continue;
+        // 生成・削除と同じく pos 順の添字で対応させる — pos 厳密
+        // 一致だと本文編集で注記位置がずれた枠が永遠に対象外になる
+        const fi = frames.indexOf(o);
+        const img = imgs[fi];
+        const zn = zones.get(c.id)?.get(fi);
+        if (!img || !lrF) continue;
+        const cur = pageOf(o);
+        const slIdx = lrF.slices.findIndex(
+          (s) => img.pos < s.offset + s.text.length,
+        );
+        const sl =
+          slIdx >= 0
+            ? lrF.slices[slIdx]
+            : lrF.slices[lrF.slices.length - 1];
+        const ao = sl && objs.find((q) => q.id === sl.areaId);
+        if (!ao) continue;
+        // 宛先頁に既にいる他の注記枠ぶんカスケードする
+        const n = objs.filter(
+          (q) =>
+            q.id !== o.id &&
+            q.kind === IMG_KIND &&
+            (q.data as ImageData | undefined)?.placeholder &&
+            pageOf(q)?.id === pageOf(ao)?.id,
+        ).length;
+        const a2 = anchorOf(
+          sl,
+          slIdx >= 0 ? lrF.slices[slIdx + 1] : undefined,
+          // ゾーンのエリアへ着地させる（次頁送りのゾーンは
+          // 次頁のエリアを指す）
+          (zn ? objs.find((q) => q.id === zn.areaId) : undefined) ??
+            ao,
+          img.pos,
+          o.w,
+          o.h,
+          n,
+          zn,
+        );
+        if (!a2) continue;
+        // 収まらず次頁へ回った場合はその頁が宛先 — 着地先の頁と
+        // 座標の両方が一致していれば移動しない（頁外に置かれた
+        // 枠は cur が取れずスキップされ見えなくなるので、cur 無し
+        // でも必ずアンカーへ戻す）
+        const land = pageOf({ ...o, x: a2.x, y: a2.y });
+        if (
+          cur &&
+          land &&
+          land.id === cur.id &&
+          Math.abs(a2.x - o.x) < 1 &&
+          Math.abs(a2.y - o.y) < 1
+        )
+          continue;
+        moves.set(o.id, a2);
+      }
+      for (let i = frames.length; i < imgs.length; i++) {
+        const img = imgs[i];
+        const zn = zones.get(c.id)?.get(i);
+        const adopt = untagged.shift();
+        if (adopt) {
+          patches.set(adopt.id, {
+            ...(adopt.data as ImageData),
+            placeholder: {
+              ...(adopt.data as ImageData).placeholder!,
+              chain: c.id,
+              pos: img.pos,
+            },
+          });
+          continue;
+        }
+        const lr = layouts.get(c.id);
+        const slIdx =
+          lr?.slices.findIndex((s) => img.pos < s.offset + s.text.length) ??
+          -1;
+        const sl =
+          slIdx >= 0
+            ? lr!.slices[slIdx]
+            : lr?.slices[lr.slices.length - 1];
+        const ao = sl && objs.find((o) => o.id === sl.areaId);
+        const pr = ao && pageOf(ao);
+        if (!pr) continue;
+        const mi = marginInsets(margins, pr.slot);
+        const bw = pr.w - mi.l - mi.r;
+        const bh = pr.h - mi.t - mi.b;
+        // 注記の横×縦（px）は 96dpi 実寸 mm へ換算。版面に収まらない
+        // 指定は収まる比率で縮小、サイズ省略は版面幅の60%を既定
+        let w = img.w > 0 ? img.w / MM_PX : bw * 0.6;
+        let h = img.h > 0 ? img.h / MM_PX : w * 0.75;
+        const sc = Math.min(1, bw / w, bh / h);
+        w *= sc;
+        h *= sc;
+        // 注記由来の画像は回り込みしないブロック扱い — 注記の
+        // 段の次の段から画像が始まる（縦版）/ 次の行の上端（横版）。
+        // 画像下の余白は障害の全高化で回しこみ禁止になる
+        const n = perPage.get(pr.id) ?? 0;
+        perPage.set(pr.id, n + 1);
+        const a = anchorOf(
+          sl!,
+          slIdx >= 0 ? lr!.slices[slIdx + 1] : undefined,
+          (zn ? objs.find((q) => q.id === zn.areaId) : undefined) ??
+            ao!,
+          img.pos,
+          w,
+          h,
+          n,
+          zn,
+        ) ?? { x: ao!.x, y: ao!.y };
+        const { x, y } = a;
+        adds.push({
+          id: nextId('im'),
+          kind: IMG_KIND,
+          x,
+          y,
+          w,
+          h,
+          style: { stroke: 'rgba(90,110,140,0.4)' },
+          data: {
+            url: '',
+            aspect: h / w,
+            lock: true,
+            // 注記由来の画像は回り込みしない（青空注記には回り込み
+            // 指定が無いためブロック扱い — アプリで差し込んだ
+            // 画像のみ回しこみ対象）
+            noWrap: true,
+            placeholder: {
+              alt: img.alt,
+              file: img.file,
+              chain: c.id,
+              pos: img.pos,
+              nextPage: a.next,
+            },
+          } satisfies ImageData,
+        });
+      }
+    }
+    if (!adds.length && !drops.size && !patches.size && !moves.size)
+      return;
+    engine.setDoc({
+      ...engine.doc,
+      objects: [
+        ...objs
+          .filter((o) => !drops.has(o.id))
+          .map((o) => {
+            const p = patches.get(o.id);
+            const m = moves.get(o.id);
+            if (!p && !m) return o;
+            const { next, ...xy } = m ?? {};
+            let data = p ?? o.data;
+            const d3 = o.data as ImageData | undefined;
+            if (
+              !p &&
+              next !== undefined &&
+              d3?.placeholder &&
+              !!d3.placeholder.nextPage !== !!next
+            )
+              data = {
+                ...d3,
+                placeholder: { ...d3.placeholder, nextPage: !!next },
+              };
+            return { ...o, ...xy, data };
+          }),
+        ...adds,
+      ],
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aozora, layouts, chains, engine.doc.objects, model, margins]);
+
+  // v0.9: 青空ZIP の同梱画像で空枠を自動充填 — 注記の file 名と
+  // 同梱画像ファイル名（basename 一致）を対応づける
+  useEffect(() => {
+    const map = aozoraImgRef.current;
+    if (!map.size) return;
+    for (const o of engine.doc.objects) {
+      const d = o.data as ImageData | undefined;
+      if (o.kind !== IMG_KIND || !d?.placeholder || d.url) continue;
+      const url = map.get(d.placeholder.file.toLowerCase());
+      if (!url || aozoraImgBusy.current.has(o.id)) continue;
+      aozoraImgBusy.current.add(o.id);
+      const im = new Image();
+      im.onload = () => {
+        aozoraImgBusy.current.delete(o.id);
+        fillPlaceholder(o, url, im.naturalHeight / im.naturalWidth);
+      };
+      im.src = url;
+    }
+  }, [engine.doc.objects]);
 
   // 右ペインの駆動源（選択オブジェクト配列）
   const selObjs = engine.doc.objects.filter((o) =>
@@ -2213,28 +3099,49 @@ export function App() {
         o.y + o.h / 2 >= last.y &&
         o.y + o.h / 2 < last.y + last.h,
     );
-    if (inside.length === 0) return null;
+    // オブジェクトが一つも無い末尾ページは完全な空 — 削除対象
+    if (inside.length === 0) return last.id;
     // v0.6: 段組では末尾ページに段数分の枠が乗る — すべて
     // genko/auto 枠で、かつ全スライスが空（空白のみ・孤児枠
     // も空扱い）なら末尾ページを削る
     const slices = layouts.get(writeChain.id)?.slices;
     const allEmpty = inside.every((o) => {
       const d = o.data as TextAreaData | undefined;
+      // v0.9: 未割当の画像空枠（placeholder）は残り物扱い —
+      // 注記は本文側に残るため、消しても同期エフェクトが正しい
+      // 頁へ再生成する。充填済み画像は人の配置なので残す
+      const id2 = o.data as ImageData | undefined;
+      if (o.kind === IMG_KIND && id2?.placeholder && !id2.url)
+        return true;
       if (!d?.genko && !d?.auto) return false;
       const sl = slices?.find((s) => s.areaId === o.id);
       return !sl || sl.text.trim() === '';
     });
     return allEmpty ? last.id : null;
   })();
-  const wcLastOv = useRef('');
+  const wcLastOv = useRef({ ov: '', areas: 0, pages: 0 });
   useEffect(() => {
     // あふれが空白だけなら追加しない — 追加すると空ページを
     // 削る処理と無限ループになる
     if (wcOverflow.length > 0 && wcOverflow.trim() !== '') {
-      // 追加してもあふれが減らない場合は吸収不能（枠が組め
-      // ない spec や連鎖未接続）— 打ち切らないと無限ループ
-      if (wcOverflow === wcLastOv.current) return;
-      wcLastOv.current = wcOverflow;
+      // 吸収不能（枠が組めない spec や連鎖未接続）なら打ち切り
+      // — ただし「あふれが同じ」だけでは止めず、頁・エリアも
+      // 変わっていない（真に進捗ゼロ）ときだけ打ち切る。
+      // あふれ文字列だけの比較だと、追加→再計算の途中で同一
+      // 文字列に見えたまま追加が永久に止まることがあった
+      const areasN = (writeChain ?? chains[0])?.areas.length ?? 0;
+      const last = wcLastOv.current;
+      if (
+        wcOverflow === last.ov &&
+        areasN === last.areas &&
+        model.pages.length === last.pages
+      )
+        return;
+      wcLastOv.current = {
+        ov: wcOverflow,
+        areas: areasN,
+        pages: model.pages.length,
+      };
       // あふれ文字数から必要ページを一括追加 — 1ページずつ
       // 往復すると大文書で時間がかかる。別タスク化も兼ねる
       setTimeout(() => {
@@ -2244,19 +3151,19 @@ export function App() {
         );
         const need = Math.ceil(wcOverflow.length / perPage) + 1;
         const ax = curAxis();
-        let next = model;
+        const base = modelRef.current; // タイムアウト時点の最新
+        let next = base;
         const objs = contentObjects();
         const ids: string[] = [];
-        while (ids.length < need || next.pages.length < model.pages.length + need) {
+        while (next.pages.length < base.pages.length + need) {
           next = addPage(next);
           const slot = next.pages[next.pages.length - 1].slot;
           for (const a of genkoAreaObjs(next.spec, slot, genko, ax, margins)) {
             objs.push(a);
             ids.push(a.id);
           }
-          if (next.pages.length >= model.pages.length + need) break;
         }
-        const target = writeChain ?? chains[0];
+        const target = writeChain ?? chainsRef.current[0];
         if (target && ids.length)
           setChains((cs) =>
             cs.map((c) =>
@@ -2269,7 +3176,7 @@ export function App() {
       }, 0);
       return;
     }
-    wcLastOv.current = '';
+    wcLastOv.current = { ov: '', areas: 0, pages: 0 };
     if (wcEmptyTail)
       setTimeout(() => {
         // バグ等で空末尾ページが量産された場合、1枚ずつでは
@@ -2288,9 +3195,18 @@ export function App() {
               o.y + o.h / 2 >= pr.y &&
               o.y + o.h / 2 < pr.y + pr.h,
           );
-          if (!inside.length) break;
+          if (!inside.length) {
+            // オブジェクトの無い頁も空として削除へ含める
+            tail.unshift(pr.id);
+            tailRects.unshift(pr);
+            continue;
+          }
           const allEmpty = inside.every((o) => {
             const d = o.data as TextAreaData | undefined;
+            // 未割当の画像空枠は残り物 — 頁と一緒に消してよい
+            const id2 = o.data as ImageData | undefined;
+            if (o.kind === IMG_KIND && id2?.placeholder && !id2.url)
+              return true;
             if (!d?.genko && !d?.auto) return false;
             const sl = slices?.find((s) => s.areaId === o.id);
             return !sl || sl.text.trim() === '';
@@ -2879,9 +3795,11 @@ export function App() {
             fontStyle: a?.italic ? 'italic' : undefined,
             textDecoration:
               a?.underline || a?.link ? 'underline' : undefined,
-            // 傍点（青空注記由来）— 一律 sesame「・」
+            // 傍点（青空注記由来）— 横書きは sesame、縦書きは
+            // よみがな扱いでルビ欄へ「・」（vtrender 側）
             textEmphasis: a?.boten ? 'sesame' : undefined,
           },
+          boten: a?.boten,
           title: a?.link,
         };
       };
@@ -2997,7 +3915,28 @@ export function App() {
     }
     if (o.kind === IMG_KIND) {
       const d = o.data as ImageData;
-      return <img className="img-fill" src={d.url} draggable={false} alt="" />;
+      // v0.9: 未割当のプレースホルダ枠 — 注記の説明文を
+      // 中央表示した空枠として描く（選択中の貼付/読込で充填）
+      if (d.placeholder && !d.url)
+        return (
+          <div className="img-ph">
+            <span>{d.placeholder.alt || d.placeholder.file}</span>
+            {d.placeholder.file && (
+              <span className="img-ph-file">{d.placeholder.file}</span>
+            )}
+            {writeMode && (
+              <span className="img-ph-hint">{t('img.phClick')}</span>
+            )}
+          </div>
+        );
+      return (
+        <img
+          className="img-fill"
+          src={d.url}
+          draggable={false}
+          alt={d.placeholder?.alt ?? ''}
+        />
+      );
     }
     // rect は kimetron 1.4.1 のネイティブ描画（ki-obj の
     // background/border = style 由来）に任せるため中身なし
@@ -3024,6 +3963,7 @@ export function App() {
           onSave={() => setSaveDlg(docTitle || 'document')}
           onExportText={exportText}
           onImportText={() => textFileRef.current?.click()}
+          onImportZip={() => aozoraZipRef.current?.click()}
           onUndo={undo}
           onRedo={redo}
           canUndo={histRef.current.past.length > 0}
@@ -3667,92 +4607,73 @@ export function App() {
           // 長文の流れ込みは重い — まず進行中オーバーレイを
           // 描いてから次フレームで流す（描けなければハングに見える）
           setBusy(t('hint.importing'));
-          // .txt は UTF-8 とは限らない（青空文庫系は Shift-JIS）
-          // — UTF-8 で解釈できなければ Shift-JIS で読み直す
-          const readText = async () => {
-            const buf = await f.arrayBuffer();
-            const utf8 = new TextDecoder('utf-8', { fatal: false }).decode(buf);
-            if (utf8.includes('�'))
-              return new TextDecoder('shift_jis').decode(buf);
-            return utf8;
-          };
-          readText().then((text) => {
-            const target = writeChain ?? chains[0];
-            if (!target) return void setBusy(null);
-            requestAnimationFrame(() =>
-              setTimeout(() => {
-                // 大文書は あふれ→追加 の往復が二乗級に遅い —
-                // 枠容量から必要ページ数を概算して先に一括生成
-                const perPage = Math.max(
-                  50,
-                  genko.cells *
-                    genko.cols *
-                    Math.max(1, genko.columns ?? 1),
-                );
-                const need =
-                  Math.ceil(text.length / perPage) + 1;
-                if (need > model.pages.length) {
-                  const ax = curAxis();
-                  let next = model;
-                  const objs = contentObjects();
-                  const ids: string[] = [];
-                  while (next.pages.length < need) {
-                    next = addPage(next);
-                    const slot =
-                      next.pages[next.pages.length - 1].slot;
-                    for (const a of genkoAreaObjs(
-                      next.spec,
-                      slot,
-                      genko,
-                      ax,
-                      margins,
-                    )) {
-                      objs.push(a);
-                      ids.push(a.id);
-                    }
-                  }
-                  if (ids.length)
-                    setChains((cs) =>
-                      cs.map((c) =>
-                        c.id === target.id
-                          ? { ...c, areas: [...c.areas, ...ids] }
-                          : c,
-                      ),
-                    );
-                  commitPages(next, objs);
-                }
-                // 青空注記は描画側で解釈 — 連鎖テキストは公式
-                // txt のまま保持する（編集・検索が生文に対して動く）。
-                // ここでは注記件数の報告だけパースする。
-                // CRLF 改行は \n へ正規化 — textarea は値を LF に
-                // 正規化するため、\r が残るとキャレット位置が
-                // 行数ぶんズレる（検索・ページシンクが壊れる）
-                const src = text.replace(/\r\n?/g, '\n');
-                const parsed = parseAozora(src);
-                setChains((cs) =>
-                  cs.map((c) =>
-                    c.id === target.id
-                      ? { ...c, text: src, marks: [] }
-                      : c,
-                  ),
-                );
-                setBusy(null);
-                flash(
-                  tf(t, 'hint.imported', f.name) +
-                    (parsed.handled || parsed.dropped
-                      ? ' / ' +
-                        tf(t, 'hint.aozora', parsed.handled, parsed.dropped)
-                      : ''),
-                );
-              }, 30),
-            );
+          f.arrayBuffer().then((buf) =>
+            importChainText(decodeAozoraText(new Uint8Array(buf)), f.name),
+          );
+        }}
+      />
+      {/* v0.9: 青空文庫 ZIP 読込 — txt と同梱画像を取り込み、
+          注記の file と一致する空枠へ画像を自動充填する */}
+      <input
+        ref={aozoraZipRef}
+        type="file"
+        accept=".zip"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.currentTarget.files?.[0];
+          e.currentTarget.value = '';
+          if (!f) return;
+          setBusy(t('hint.importing'));
+          f.arrayBuffer().then((buf) => {
+            let files: Record<string, Uint8Array>;
+            try {
+              files = unzipSync(new Uint8Array(buf));
+            } catch {
+              setBusy(null);
+              flash(t('hint.zipBad'));
+              return;
+            }
+            // 同梱画像を basename → dataURL へ（注記 file と対応づけ）
+            const map = new Map<string, string>();
+            for (const [n, u8] of Object.entries(files)) {
+              const m = /\.(png|jpe?g|gif|webp)$/i.exec(n);
+              if (!m) continue;
+              let b = '';
+              for (let i = 0; i < u8.length; i += 0x8000)
+                b += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+              const ext = m[1].toLowerCase().replace('jpeg', 'jpg');
+              map.set(
+                n.split('/').pop()!.toLowerCase(),
+                `data:image/${ext};base64,${btoa(b)}`,
+              );
+            }
+            aozoraImgRef.current = map;
+            const tn = Object.keys(files).find((n) => /\.txt$/i.test(n));
+            if (!tn) {
+              setBusy(null);
+              flash(t('hint.zipNoTxt'));
+              return;
+            }
+            // 青空ZIPは四六判・縦・単行本(43×17)へ揃える —
+            // 画像ゾーン・枠は読込時の版面で確定するため、別判型で
+            // 読むと画像と文字がずれる。遅延実行内で同じ model へ
+            // 適用しないと不整合になるので fix として渡す
+            setGenko({ cells: 43, cols: 17, columns: 1 });
+            importChainText(decodeAozoraText(files[tn]), f.name, {
+              spec: {
+                ...model.spec,
+                size: 'SHIROKU',
+                landscape: false,
+              },
+              genko: { cells: 43, cols: 17, columns: 1 },
+            });
           });
         }}
       />
       <input
         ref={openFileRef}
         type="file"
-        accept=".slm"
+        accept={`${ARCHIVE_EXT},.slm`}
         style={{ display: 'none' }}
         onChange={onOpenFile}
       />
@@ -3917,7 +4838,7 @@ export function App() {
                     if (e.key === 'Enter') confirmSave(saveDlg);
                   }}
                 />
-                .slm
+                {ARCHIVE_EXT}
               </label>
             </div>
             <div className="btns">

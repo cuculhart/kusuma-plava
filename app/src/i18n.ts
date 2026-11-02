@@ -13,7 +13,7 @@ const ja = {
   'menu.new': '新規',
   'menu.openDoc': '開く…',
   'menu.save': '別名保存',
-  'menu.saveTip': '書庫 (.slm) として保存（Ctrl+S）',
+  'menu.saveTip': '書庫 (.chkpf) として保存（Ctrl+S）',
   'menu.undo': '取り消し',
   'menu.redo': 'やり直し',
   'menu.ruler': 'ルーラー',
@@ -44,6 +44,7 @@ const ja = {
   'menu.modeTip':
     '執筆 ⇄ 組版の切替 — 執筆では左に本文ペイン、レイアウト編集は畳む',
   'menu.importText': 'テキスト読込',
+  'menu.importZip': '青空ZIP読込',
   'menu.exportText': 'テキスト出力',
   'menu.exportTextTip':
     '連鎖テキストを .txt で書き出す（糖衣は ｜《》 へ正規化）',
@@ -85,6 +86,9 @@ const ja = {
   'hint.exported': 'テキストを書き出しました',
   'hint.imported': '$1 を読み込みました',
   'hint.aozora': '青空注記 $1 件を処理（$2 件は未対応で除去）',
+  'hint.aozoraImg': '画像注記 $1 件へ空枠を配置',
+  'hint.zipNoTxt': 'ZIP内に .txt が見つかりません',
+  'hint.zipBad': 'ZIP を読み取れませんでした',
   'chain.toPage': 'この位置のページを表示',
   'chain.toText': '表示中ページの先頭文字へ',
   'hint.importing': '読み込み中…',
@@ -175,6 +179,9 @@ const ja = {
   'doc.hint': '未選択 / 複数選択 — オブジェクトを選ぶとプロパティが出ます',
   'img.title': '画像',
   'img.lock': 'アスペクト比をロック',
+  'img.phHint':
+    '空枠（青空画像注記）— この枠を選んだ状態で画像の貼り付け・読込を行うと割り当てられます',
+  'img.phClick': '選択して画像を貼付・読込',
   'sel.mixed': '選択（$1）',
   'sel.mixedHint': '一括プロパティ編集はありません（画像を含む選択は対象外）',
   'font.batch': 'テキストエリア（複数選択）',
@@ -258,7 +265,7 @@ const en: Record<keyof typeof ja, string> = {
   'menu.new': 'New',
   'menu.openDoc': 'Open…',
   'menu.save': 'Save as',
-  'menu.saveTip': 'Save as archive (.slm) (Ctrl+S)',
+  'menu.saveTip': 'Save as archive (.chkpf) (Ctrl+S)',
   'menu.undo': 'Undo',
   'menu.redo': 'Redo',
   'menu.ruler': 'Rulers',
@@ -289,6 +296,7 @@ const en: Record<keyof typeof ja, string> = {
   'menu.modeTip':
     'Toggle writing / layout — writing puts the text pane on the left and folds layout editing',
   'menu.importText': 'Import text',
+  'menu.importZip': 'Import aozora ZIP',
   'menu.exportText': 'Export text',
   'menu.exportTextTip':
     'Export chain text as .txt (sugar normalized to ｜《》)',
@@ -329,6 +337,9 @@ const en: Record<keyof typeof ja, string> = {
   'hint.exported': 'Text exported',
   'hint.imported': '$1 imported',
   'hint.aozora': 'aozora notes: $1 handled ($2 dropped)',
+  'hint.aozoraImg': '$1 image placeholder(s) placed',
+  'hint.zipNoTxt': 'No .txt found in ZIP',
+  'hint.zipBad': 'Could not read ZIP',
   'chain.toPage': 'show this position in the page view',
   'chain.toText': 'caret to the first char of the visible page',
   'hint.importing': 'Importing…',
@@ -416,6 +427,9 @@ const en: Record<keyof typeof ja, string> = {
   'doc.hint': 'Nothing / multiple selected — select an object for properties',
   'img.title': 'Image',
   'img.lock': 'Lock aspect ratio',
+  'img.phHint':
+    'Empty frame (aozora image note) — paste or load an image while this frame is selected to fill it',
+  'img.phClick': 'Select, then paste or load',
   'sel.mixed': 'Selection ($1)',
   'sel.mixedHint':
     'No batch property editing (selections containing images are excluded)',

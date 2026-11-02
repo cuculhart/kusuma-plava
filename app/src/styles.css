@@ -912,6 +912,55 @@ body,
   pointer-events: none;
 }
 
+/* 青空画像注記のプレースホルダ枠（未割当の空枠 — v0.9） */
+.img-ph {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-sizing: border-box;
+  border: 1px dashed rgba(90, 110, 140, 0.8);
+  background: rgba(90, 110, 140, 0.08);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+  text-align: center;
+  overflow: hidden;
+  padding: 4px;
+  pointer-events: none;
+}
+
+.img-ph-file {
+  font-size: 9px;
+  opacity: 0.75;
+  word-break: break-all;
+}
+
+/* 執筆モード時の割当導線ヒント（クリックでファイル選択） */
+.img-ph-hint {
+  font-size: 9px;
+  color: var(--accent, #3a6ea5);
+}
+
+/* 印刷側のプレースホルダ枠（mm 実寸 — .parea と同じ絶対配置） */
+.img-ph-print {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 0.3mm dashed #788ca0;
+  color: #788ca0;
+  font-size: 3mm;
+  line-height: 1.4;
+  text-align: center;
+  overflow: hidden;
+  padding: 1mm;
+}
+
 .img-ghost {
   position: absolute;
   opacity: 0.45;

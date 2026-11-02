@@ -23,6 +23,7 @@ export function MenuPane({
   onSave,
   onExportText,
   onImportText,
+  onImportZip,
   onUndo,
   onRedo,
   canUndo,
@@ -57,6 +58,8 @@ export function MenuPane({
   onExportText: () => void;
   /** v0.7: .txt を連鎖テキストへ読み込む */
   onImportText: () => void;
+  /** v0.9: 青空文庫 ZIP（txt＋同梱画像）を読み込む */
+  onImportZip: () => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -116,7 +119,7 @@ export function MenuPane({
           <span className="m-label">
             Kusuma Plava
             <br />
-            <span className="m-ver">v0.8.0</span>
+            <span className="m-ver">v0.9.0</span>
           </span>
         )}
       </button>
@@ -134,10 +137,15 @@ export function MenuPane({
         enIc: 'S',
       })}
       {item('読', t('menu.importText'), onImportText, { enIc: 'T' })}
+      {/* v0.9: 青空文庫 ZIP — txt ＋同梱画像の一括取り込み */}
+      {item('青', t('menu.importZip'), onImportZip, { enIc: 'Z' })}
       {item('出', t('menu.exportText'), onExportText, {
         title: t('menu.exportTextTip'),
         enIc: 'T',
       })}
+      {/* v0.9: 画像は執筆モードでも差し込める（現ページの版面へ直接
+          配置）— 大文書で組版への切替が重いためゲートから出した */}
+      {item('画', t('menu.image'), onImage, { enIc: 'I' })}
       <div className="m-sep" />
       {canUndo &&
         item('消', t('menu.undo'), onUndo, { title: 'Ctrl+Z', enIc: '↶' })}
@@ -163,7 +171,6 @@ export function MenuPane({
             title: t('menu.linkTip'),
             enIc: 'L',
           })}
-          {item('画', t('menu.image'), onImage, { enIc: 'I' })}
           <div className="m-sep" />
           {item('□', t('menu.rect'), () => onShapeTool(shapeTool === 'rect' ? null : 'rect'), {
             on: shapeTool === 'rect',

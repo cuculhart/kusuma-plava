@@ -309,7 +309,19 @@ export function RightDock({
   const shapes = selObjs.filter(isShape);
 
   let body: React.ReactNode;
-  if (writeMode) {
+  // v0.9: 画像は執筆モードでも選択・操作できるため、画像選択時は
+  // モードを問わず画像プロパティ（mm 数値・アスペクトロック）を出す
+  if (one?.kind === IMG_KIND) {
+    body = (
+      <ImageProps
+        obj={one}
+        onRect={onRect}
+        onData={onImageData}
+        onReorder={onReorder}
+        t={t}
+      />
+    );
+  } else if (writeMode) {
     // 執筆モード — 連鎖エディタを主に大きく。レイアウト系
     // （mm 数値・揃え・Z-order・連鎖追加）は組版モード側の仕事。
     // 文書設定（用紙サイズ等）は畳んだ副セクションで下に置く
@@ -434,16 +446,6 @@ export function RightDock({
         </div>
       </>
     );
-  } else if (one?.kind === IMG_KIND) {
-    body = (
-      <ImageProps
-        obj={one}
-        onRect={onRect}
-        onData={onImageData}
-        onReorder={onReorder}
-        t={t}
-      />
-    );
   } else if (allText && selObjs.length > 1) {
     body = <FontBatch onApply={onAreaDataAll} t={t} />;
   } else if (shapes.length === selObjs.length && selObjs.length > 0) {
@@ -498,6 +500,12 @@ function ImageProps({
   t: TFunc;
 }) {
   const d = obj.data as ImageData;
+  // ロック中の数値入力は縦横を連動（角リサイズ・imgDlg と同じ規則）
+  const onRectLocked = (r: { x: number; y: number; w: number; h: number }) => {
+    if (d.lock && r.w !== obj.w) return onRect({ ...r, h: r.w * d.aspect });
+    if (d.lock && r.h !== obj.h) return onRect({ ...r, w: r.h / d.aspect });
+    onRect(r);
+  };
   return (
     <div className="img-props">
       <header>
@@ -505,7 +513,10 @@ function ImageProps({
           {t('img.title')} {obj.id}
         </span>
       </header>
-      <MmFields obj={obj} onRect={onRect} />
+      <MmFields obj={obj} onRect={onRectLocked} />
+      {d.placeholder && !d.url && (
+        <div className="hint">{t('img.phHint')}</div>
+      )}
       <label className="img-lock">
         <input
           type="checkbox"

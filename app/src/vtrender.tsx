@@ -17,6 +17,9 @@ export interface VStyle {
   link?: string;
   /** title 属性（リンクのツールチップ等） */
   title?: string;
+  /** 傍点 — よみがな扱いでルビ欄へ「・」を出す
+      （CSS text-emphasis だと 1em セル内へ収まり升目へ重なる） */
+  boten?: boolean;
 }
 
 /**
@@ -36,6 +39,50 @@ export function vunitSpans(
       continue;
     }
     const s = styleOf(u.start);
+    // 傍点はよみがな扱い — 1字ごとに .vr+<ruby><rt>・</rt> として
+    // ルビ欄へ点を出す（1字=1セルの通常ルビ単位と同じ構造・同じ
+    // 組版。単位を丸ごと不可分にすると段の折返しがずれるため、
+    // 字ごとの要素に分解して通常字と同じ折返しにする）
+    if (s.boten && u.kind !== 'ruby') {
+      for (const [i, ch] of [...u.text].entries()) {
+        const inner = (
+          <ruby>
+            <span className="vc">{ch}</span>
+            <rt>・</rt>
+          </ruby>
+        );
+        const css = {
+          ...s.css,
+          textEmphasis: undefined,
+          inlineSize: '1em',
+        } as CSSProperties;
+        out.push(
+          s.link ? (
+            <a
+              key={`${u.start}.${i}`}
+              className="vr"
+              href={s.link}
+              target="_blank"
+              rel="noreferrer"
+              title={s.title}
+              style={css}
+            >
+              {inner}
+            </a>
+          ) : (
+            <span
+              key={`${u.start}.${i}`}
+              className="vr"
+              title={s.title}
+              style={css}
+            >
+              {inner}
+            </span>
+          ),
+        );
+      }
+      continue;
+    }
     // 進行をフォントの縦送り量（vmtx/vhea）非依存に固定し、
     // fitVertical の単位計測（1単位 = u.cells セル）と一致させる:
     //   - 通常字 → .vc（inline-block + inline-size:1em = 1セル）

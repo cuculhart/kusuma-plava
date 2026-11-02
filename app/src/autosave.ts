@@ -1,5 +1,5 @@
 // 自動保存（v0.3）— IndexedDB への下書き保管。
-// 格納するのは packArchive が出す .slm バイト列そのもの — 保存と同じ
+// 格納するのは packArchive が出す書庫バイト列そのもの — 保存と同じ
 // 直列化経路を使うため、画像を含めて完全な復元ができる。
 // IndexedDB 非対応/拒否環境では loadDraft が null を返し、
 // saveDraft は静かに失敗する（自動保存を諦めるだけ）。
@@ -11,7 +11,7 @@ const KEY = 'draft';
 export interface DraftRec {
   /** 保存時刻（ISO）— 「下書き HH:MM」表示用 */
   at: string;
-  /** packArchive 出力（.slm zip） */
+  /** packArchive 出力（書庫 zip） */
   slm: Uint8Array;
 }
 
