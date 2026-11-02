@@ -743,6 +743,36 @@ body,
   white-space: nowrap;
 }
 
+/* v0.10: 話区切り・見出し一覧 */
+.chain-outline {
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chain-outline summary {
+  padding: 4px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chain-outline button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--line);
+  color: var(--text);
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.chain-outline button:hover {
+  background: var(--surface2);
+}
+
 /* ── 検索・置換バー（v0.3）— テキスト欄の直上の帯 ── */
 .find-bar {
   display: flex;

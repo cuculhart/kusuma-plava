@@ -31,6 +31,10 @@ export interface VStyle {
 export function vunitSpans(
   units: VUnit[],
   styleOf: (rawStart: number) => VStyle,
+  /** vseg 内に配置されるときは区間高（px）を渡す — 話区切り単位の
+      天地中央寄せに使う。未指定（vflow 無しのフォールバック）では
+      区切りは通常のインライン進行のまま出る */
+  segH?: number,
 ): ReactNode[] {
   const out: ReactNode[] = [];
   for (const u of units) {
@@ -39,6 +43,63 @@ export function vunitSpans(
       continue;
     }
     const s = styleOf(u.start);
+    // 話区切り — 区切り印だけの段は区間の天地中央へ置く
+    // （vseg は position:absolute なのでそのまま重ねられる。
+    //   字レーンは段ピッチ左側の1em — .vc の translateX と同じ位置）
+    if (u.kind === 'sep' && segH === undefined) {
+      // vseg 無しの経路 — 字ごとの通常単位としてそのまま出す
+      for (const [i, ch] of [...u.text].entries())
+        out.push(
+          <span
+            key={`${u.start}.${i}`}
+            className="vc"
+            title={s.title}
+            style={s.css}
+          >
+            {ch}
+          </span>,
+        );
+      continue;
+    }
+    if (u.kind === 'sep' && segH !== undefined) {
+      out.push(
+        <span
+          key={u.start}
+          className="vsep"
+          title={s.title}
+          style={{
+            ...s.css,
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: '1em',
+            height: '100%',
+            display: 'flex',
+            // flexDirection: column は書字モードのブロック軸に従う —
+            // vertical-rl を継承すると横並びになるので明示する
+            writingMode: 'horizontal-tb',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            textAlign: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          {[...u.text].map((ch, i) => (
+            <span
+              key={i}
+              style={{
+                display: 'block',
+                blockSize: '1em',
+                lineHeight: '1em',
+              }}
+            >
+              {ch}
+            </span>
+          ))}
+        </span>,
+      );
+      continue;
+    }
     // 傍点はよみがな扱い — 1字ごとに .vr+<ruby><rt>・</rt> として
     // ルビ欄へ点を出す（1字=1セルの通常ルビ単位と同じ構造・同じ
     // 組版。単位を丸ごと不可分にすると段の折返しがずれるため、

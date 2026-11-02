@@ -11,10 +11,10 @@ import {
   pageRects,
   paperDims,
   RUBY_LANE_RATIO,
-  tokenizeVertical,
   type PageModel,
   type TextRun,
   type VFlow,
+  type VUnit,
 } from 'inimbal';
 import {
   DEFAULT_TEXT_DATA,
@@ -49,6 +49,7 @@ export function Printout({
   hashiraFont,
   objects,
   sliceRuns,
+  unitsFor,
   areaAlone,
   vflowFor,
   onPrint,
@@ -72,6 +73,9 @@ export function Printout({
   objects: WorldObject[];
   /** テキストエリア → 表示中スライスのラン列（連鎖レイアウト＋装飾解決済み） */
   sliceRuns: (o: WorldObject) => TextRun[];
+  /** v0.10: テキストエリア → 表示中スライスの組版単位列（marks 駆動の
+      ルビを含む — 編集画面と同じトークン化を App 側で行って渡す） */
+  unitsFor: (o: WorldObject) => VUnit[];
   /** 単独（非連鎖）テキストエリアか — 揃えは単独のみ有効 */
   areaAlone: (o: WorldObject) => boolean;
   /** v0.4: 回しこみ — 障害のある縦書きスライスの段×区間計画。
@@ -260,9 +264,7 @@ export function Printout({
                 // v0.4: 障害のあるスライスは段×区間計画で絶対配置 —
                 // units の区間割当は計画の u0/u1 が指す
                 const vflow = vertical ? vflowFor(o) : null;
-                const units = vertical
-                  ? tokenizeVertical(runs.map((r) => r.text).join(''))
-                  : null;
+                const units = vertical ? unitsFor(o) : null;
                 const rbs = (() => {
                   let a = 0;
                   return runs.map((r) => {
@@ -361,6 +363,7 @@ export function Printout({
                               {vunitSpans(
                                 units!.slice(s.u0, s.u1),
                                 vStyleOf,
+                                s.h,
                               )}
                             </div>
                           ))

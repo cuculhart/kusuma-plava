@@ -258,6 +258,20 @@ export function ChainPane({
     el?.focus();
   };
 
+  // ルビ挿入 — 選択があれば ｜選択《》 へ包み、無ければ《》だけ
+  // 挿入（直前の漢字連続へ暗黙に掛かる）。キャレットは《》内へ
+  // 置いてそのままヨミを打てる
+  const insertRuby = () => {
+    const el = taRef.current;
+    const s = el ? el.selectionStart : chain.text.length;
+    const e = el ? el.selectionEnd : s;
+    const sel = chain.text.slice(s, e);
+    const ins = sel ? `｜${sel}《》` : '《》';
+    pendingCaret.current = s + ins.length - 1;
+    onText(chain.text.slice(0, s) + ins + chain.text.slice(e));
+    el?.focus();
+  };
+
   // ── v0.3: 検索・置換 — アクティブ連鎖のテキストだけを対象にする
   // （textarea 文字列操作の範囲。キャンバスは再レイアウトで自動追従） ──
   const [findOpen, setFindOpen] = useState(false);
@@ -373,6 +387,39 @@ export function ChainPane({
     ? [...chain.text.slice(sel.s, sel.e)].length
     : 0;
   const sheets = (total / 400).toFixed(1);
+
+  // v0.10: 話区切り・見出しの一覧 — ＊/◇ のマーカー行と青空の
+  // 見出し注記行を拾い、クリックでその位置へジャンプする。
+  // 章・場面の構造化の入口（字数集計は未対応）
+  const outline = (() => {
+    const items: { pos: number; mark: string; label: string }[] = [];
+    let off = 0;
+    const lines = chain.text.split('\n');
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li];
+      const bm = /^([＊◇]+)\s*$/.exec(line);
+      const hm = /［＃「(.{1,30})」は[大中小]見出し］/.exec(line);
+      if (bm) {
+        const next = lines[li + 1]?.trim().slice(0, 24) ?? '';
+        items.push({ pos: off, mark: bm[1], label: next });
+      } else if (hm) {
+        items.push({ pos: off, mark: '◆', label: hm[1] });
+      }
+      off += line.length + 1;
+    }
+    return items;
+  })();
+  const jumpTo = (pos: number) => {
+    const el = taRef.current;
+    onJumpSel?.(pos, pos);
+    if (el) {
+      el.selectionStart = el.selectionEnd = pos;
+      scrollTaToCaret(el, pos);
+      el.blur();
+      el.focus();
+      onCaret?.(pos);
+    }
+  };
 
   return (
     <aside className="chain-pane">
@@ -517,6 +564,9 @@ export function ChainPane({
         <button title={t('write.breakTip')} onClick={() => insertBreak('◇')}>
           ◇
         </button>
+        <button title={t('write.rubyTip')} onClick={insertRuby}>
+          ｜《
+        </button>
         {/* ビュー⇄テキストのシンクボタン（執筆モード） */}
         {onCaret && (
           <button
@@ -597,6 +647,19 @@ export function ChainPane({
           </>
         )}
       </div>
+      {/* v0.10: 話区切り・見出し一覧 — クリックでその位置へ */}
+      {outline.length > 0 && (
+        <details className="chain-outline">
+          <summary>
+            {t('chain.outline')} ({outline.length})
+          </summary>
+          {outline.map((s, i) => (
+            <button key={i} onClick={() => jumpTo(s.pos)}>
+              {s.mark} {s.label}
+            </button>
+          ))}
+        </details>
+      )}
       {overflow && (
         <div className="chain-overflow">
           {tf(

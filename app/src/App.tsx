@@ -339,6 +339,23 @@ function buildWritingDoc(font: string): {
   };
 }
 
+/** 画像注記の配置サイズ（mm）— 注記の横×縦(px)は 96dpi 実寸へ換算、
+    サイズ省略は版面幅の60%・高さは幅の75%。版面に収まらない指定は
+    収まる比率で縮小する。ゾーン計算・空枠生成・判型変更の
+    再フィットで同じ基準を使う（ズレの元を一本化） */
+function noteImgSize(
+  img: { w: number; h: number },
+  bw: number,
+  bh: number,
+): { w: number; h: number } {
+  let w = img.w > 0 ? img.w / MM_PX : bw * 0.6;
+  let h = img.h > 0 ? img.h / MM_PX : w * 0.75;
+  const sc = Math.min(1, bw / w, bh / h);
+  w *= sc;
+  h *= sc;
+  return { w, h };
+}
+
 /** 用紙 spec 変更に伴い、自動生成のテキストエリアを新しい用紙へ追従させる。
     対象は2系統:
       - data.genko 付きの升目グリッド枠 — 旧 spec で枠の中央寄せ矩形と
@@ -351,17 +368,67 @@ function buildWritingDoc(font: string): {
         印のない旧 .slm 書庫・旧下書きの自動生成エリアも救済するため。
     いずれの系統でも、版面/枠から外れているエリア、画像・その他の
     オブジェクトは一切触れない。追従先は同じページスロットの新 spec での
-    矩形（属するページは升目枠は中心点、旧来は矩形一致で判定）。 */
+    矩形（属するページは升目枠は中心点、旧来は矩形一致で判定）。
+    v0.10: aozora を渡すと注記由来の画像枠（data.placeholder）も
+    追従する — ゾーンは版面変更で再計算されるが、枠の w/h が
+    旧版面基準のままだと新ゾーンと食い違うため、注記サイズから
+    同じ規則（noteImgSize）で再導出する。手置きの画像は触らない。 */
 function refitWritingAreas(
   objects: WorldObject[],
   prev: PageModel,
   next: PageModel,
   axis: StackAxis = 'y',
   margins: PageMargins = DEFAULT_MARGINS,
+  aozora?: Map<string, AozoraResult>,
 ): WorldObject[] {
   const eps = 0.01; // mm — 浮動小数の計算誤差を許容
   const prevRects = pageRects(prev.spec, prev.pages, axis);
+  // 連鎖ごとの注記由来画像枠を pos 順に並べ、注記 index を引く
+  // （空枠同期エフェクトと同じ index 対応規則）
+  const phFrames = new Map<string, WorldObject[]>();
+  if (aozora) {
+    for (const o of objects) {
+      const d = o.data as ImageData | undefined;
+      if (o.kind !== IMG_KIND || !d?.placeholder?.chain) continue;
+      const l = phFrames.get(d.placeholder.chain) ?? [];
+      l.push(o);
+      phFrames.set(d.placeholder.chain, l);
+    }
+    for (const l of phFrames.values())
+      l.sort(
+        (a, b) =>
+          (a.data as ImageData).placeholder!.pos -
+          (b.data as ImageData).placeholder!.pos,
+      );
+  }
   return objects.map((o) => {
+    if (o.kind === IMG_KIND) {
+      const d = o.data as ImageData | undefined;
+      const ph = d?.placeholder;
+      if (!ph?.chain || !aozora) return o;
+      const img =
+        aozora.get(ph.chain)?.images[
+          phFrames.get(ph.chain)?.indexOf(o) ?? -1
+        ];
+      if (!img) return o;
+      const cx = o.x + o.w / 2;
+      const cy = o.y + o.h / 2;
+      const hit = prevRects.find(
+        (r) => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
+      );
+      if (!hit) return o;
+      const p = pageRectAt(next.spec, hit.slot, axis);
+      const ni = marginInsets(margins, hit.slot);
+      const s = noteImgSize(img, p.w - ni.l - ni.r, p.h - ni.t - ni.b);
+      // 充填済みは自然アスペクトを保つ（幅だけ版面へ再フィット）
+      const h = d!.url ? s.w * (d!.aspect || s.h / s.w) : s.h;
+      return {
+        ...o,
+        w: s.w,
+        h,
+        data: { ...d!, aspect: d!.url ? d!.aspect : h / s.w },
+      };
+    }
     if (o.kind !== TEXT_KIND) return o;
     const d = o.data as TextAreaData | undefined;
     const g = d?.genko;
@@ -547,6 +614,9 @@ export function App() {
   const [margins, setMargins] = useState<PageMargins>(() => ({
     ...DEFAULT_MARGINS,
   }));
+  // v0.10: 空行を畳む — 文書設定。ソースの空行（\n\n 連続）を組版から
+  // 除く（青空本文の見栄え用空行の抑制。既定OFF = 1空行=1空段の仕様）
+  const [collapseNl, setCollapseNl] = useState(false);
   // v0.3: 目標字数 — アプリ設定（文書ではなく環境の好み）として
   // localStorage へ。正準値は字数（枚数入力は ×400 で畳み込む）
   const [goal, setGoal] = useState(
@@ -577,6 +647,7 @@ export function App() {
     gridAlpha: number;
     hashira: string;
     margins: PageMargins;
+    collapseNl: boolean;
   };
   const histRef = useRef<{ past: Snap[]; future: Snap[]; last: number }>({
     past: [],
@@ -962,7 +1033,14 @@ export function App() {
     const next = setPaper(model, spec);
     commitPages(
       next,
-      refitWritingAreas(contentObjects(), model, next, curAxis(), margins),
+      refitWritingAreas(
+        contentObjects(),
+        model,
+        next,
+        curAxis(),
+        margins,
+        aozora,
+      ),
     );
     focusPage(curPage, next);
   };
@@ -1127,6 +1205,7 @@ export function App() {
     gridBgAlpha,
     hashira,
     margins,
+    collapseNl,
   });
   const applySnap = (s: Snap) => {
     applyingRef.current = true;
@@ -1176,6 +1255,7 @@ export function App() {
     setGridAlpha(s.gridAlpha);
     setHashira(s.hashira);
     setMargins(s.margins);
+    setCollapseNl(s.collapseNl);
     snapRef.current = s;
     applyingRef.current = false;
   };
@@ -1215,7 +1295,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -1256,6 +1336,7 @@ export function App() {
           gridBgAlpha: 0,
           hashira: '',
           margins: { ...DEFAULT_MARGINS },
+          collapseNl: false,
         };
         const cur = {
           spec: r.model.spec,
@@ -1277,6 +1358,7 @@ export function App() {
           gridBgAlpha: r.gridBgAlpha,
           margins: r.margins,
           hashira: r.hashira,
+          collapseNl: r.collapseNl,
         };
         if (JSON.stringify(blank) === JSON.stringify(cur)) return;
         applyArchive(r);
@@ -1319,6 +1401,7 @@ export function App() {
           gridBgAlpha,
           hashira,
           margins,
+          collapseNl,
         });
         void saveDraft(u8).then((at) => {
           if (at) setDraftAt(at);
@@ -1329,7 +1412,7 @@ export function App() {
     }, 1500);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl]);
 
   // v0.7: 執筆モードのホイール = ページめくり — ページビューア化で
   // 可変ズームと自由パンを廃止したため、ホイール送りは現ページ±1へ
@@ -1470,6 +1553,7 @@ export function App() {
     setGridAlpha(1);
     setHashira('');
     setMargins({ ...DEFAULT_MARGINS });
+    setCollapseNl(false);
     createdAtRef.current = new Date().toISOString();
     dirtyRef.current = false;
     engine.setSelection([]);
@@ -1497,6 +1581,7 @@ export function App() {
       gridBgAlpha,
       hashira,
       margins,
+      collapseNl,
     });
     const a = document.createElement('a');
     const url = URL.createObjectURL(
@@ -1588,6 +1673,7 @@ export function App() {
     // v0.7: 柱 — unpack 側で欠落は空へ畳み済み（空=出さない）
     setHashira(r.hashira);
     setMargins(r.margins ?? { ...DEFAULT_MARGINS });
+    setCollapseNl(r.collapseNl === true);
     createdAtRef.current = r.createdAt || new Date().toISOString();
     dirtyRef.current = false;
     engine.setSelection([]);
@@ -2074,8 +2160,6 @@ export function App() {
     name: string,
     fix?: { spec: PageModel['spec']; genko: GenkoGrid },
   ) => {
-    const target = writeChain ?? chains[0];
-    if (!target) return void setBusy(null);
     requestAnimationFrame(() =>
       setTimeout(() => {
         // 青空注記は描画側で解釈 — 連鎖テキストは公式 txt の
@@ -2086,57 +2170,61 @@ export function App() {
         const src = text.replace(/\r\n?/g, '\n');
         const parsed = parseAozora(src);
         const ax = curAxis();
-        const objs = contentObjects();
+        // v0.10: 読込は必ず新規文書から始める — 旧文書の本文・
+        // 画像・図形が残ると読込結果へ混入する。升目枠だけの
+        // 空ドキュメント（newDoc と同じ buildWritingDoc）を
+        // 組み直してから本文を流す
+        const fresh = buildWritingDoc(docFont);
+        const objs: WorldObject[] = [];
         // 判型/升目の強制指定は同じ next に対して適用する —
         // 外側で setState すると遅延実行が旧 model を捕捉して
-        // 不整合になる（ページが旧 spec で組まれて表示が崩れる）。
-        // setPaper はページ寸法だけなので、既存の升目エリアも
-        // applySpec と同じく refitWritingAreas で新版面へ追従させる
+        // 不整合になる（ページが旧 spec で組まれて表示が崩れる）
         const g = fix?.genko ?? genko;
-        let next = model;
-        if (fix?.spec) {
-          next = setPaper(next, fix.spec);
-          const fitted = refitWritingAreas(objs, model, next, ax, margins);
-          objs.length = 0;
-          objs.push(...fitted);
-        }
-        // 既存の升目エリアは自身の data.genko のまま追従するため、
-        // 升目の強制指定があるときは枠ごと差し替える
-        if (fix?.genko) {
-          const nr = pageRects(next.spec, next.pages, ax);
-          for (let i = 0; i < objs.length; i++) {
-            const o = objs[i];
-            const od = o.data as TextAreaData | undefined;
-            if (o.kind !== TEXT_KIND || !od?.genko) continue;
-            const cx = o.x + o.w / 2;
-            const cy = o.y + o.h / 2;
-            const hit = nr.find(
-              (r) =>
-                cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
-            );
-            if (!hit) continue;
-            const f = genkoFrame(
-              next.spec,
-              hit.slot,
-              g,
-              ax,
-              margins,
-              od.col ?? 0,
-            );
-            if (!f) continue;
-            objs[i] = {
-              ...o,
-              x: f.x,
-              y: f.y,
-              w: f.w,
-              h: f.h,
-              data: {
-                ...od,
-                fontSize: f.fontSize,
-                genko: { ...g },
-              },
-            };
+        let next = fresh.model;
+        if (fix?.spec) next = setPaper(next, fix.spec);
+        // P1 の枠は目標の spec・升目・マージンで直接生成する —
+        // buildWritingDoc の枠は既定マージン基準で作られるため、
+        // 文書マージンが既定と違うと refitWritingAreas の旧枠一致
+        // 判定から外れて「手動枠」と誤認され追従しない不具合が
+        // あった（P1 だけ旧版面の枠が残る）。生成物と分かっている
+        // 枠は判定なしで差し替えてよい
+        const baseIds: string[] = [];
+        const first = genkoAreaObjs(
+          next.spec,
+          next.pages[0].slot,
+          g,
+          ax,
+          margins,
+        );
+        if (first.length) {
+          for (const a of first) {
+            objs.push(a);
+            baseIds.push(a.id);
           }
+        } else {
+          // 升目が組めない極小用紙 — 版面矩形の単一枠へ退く
+          const pr = pageRectAt(next.spec, next.pages[0].slot, ax);
+          const ni = marginInsets(margins, next.pages[0].slot);
+          const a: WorldObject = {
+            id: nextId('ta'),
+            kind: TEXT_KIND,
+            x: pr.x + ni.l,
+            y: pr.y + ni.t,
+            w: pr.w - ni.l - ni.r,
+            h: pr.h - ni.t - ni.b,
+            style: {
+              stroke: 'rgba(90,110,140,0.4)',
+              fill: gridLineCss(gridBg, gridBgAlpha / 100),
+            },
+            data: {
+              ...DEFAULT_TEXT_DATA,
+              fontFamily: docFont,
+              writing: 'vertical-rl',
+              auto: true,
+            },
+          };
+          objs.push(a);
+          baseIds.push(a.id);
         }
         const ids: string[] = [];
         // 大文書は あふれ→追加 の往復が二乗級に遅い —
@@ -2160,20 +2248,20 @@ export function App() {
             ids.push(a.id);
           }
         }
-        if (ids.length)
-          setChains((cs) =>
-            cs.map((c) =>
-              c.id === target.id
-                ? { ...c, areas: [...c.areas, ...ids] }
-                : c,
-            ),
-          );
-        if (next !== model) commitPages(next, objs);
-        setChains((cs) =>
-          cs.map((c) =>
-            c.id === target.id ? { ...c, text: src, marks: [] } : c,
-          ),
+        commitPages(next, objs);
+        setChains(
+          fresh.chains.map((c) => ({
+            ...c,
+            areas: [...baseIds, ...ids],
+            text: src,
+            marks: [],
+          })),
         );
+        setWriteChainId(null);
+        engine.setSelection([]);
+        createdAtRef.current = new Date().toISOString();
+        // 読込は新規文書なので必ず先頭ページへフィット
+        focusPage(0, next);
         setBusy(null);
         flash(
           tf(t, 'hint.imported', name) +
@@ -2531,11 +2619,12 @@ export function App() {
         parseAozora(c.text, {
           headingFs: bfs * 1.3,
           captionFs: bfs * 0.8,
+          collapseNl,
         }),
       );
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chains, model.spec, genko, margins]);
+  }, [chains, model.spec, genko, margins, collapseNl]);
   // レイアウト・描画に使う marks = 青空注記由来（変換座標）
   // + ユーザー手動 marks（生座標→変換座標へマップ）
   const chainMarks = (c: Chain): TextMark[] => {
@@ -2597,7 +2686,18 @@ export function App() {
       const pz = aozora.get(c.id);
       const txt = pz?.text ?? c.text;
       const marks = chainMarks(c);
-      let lr = layoutChain(txt, boxes, measurerRef.current, marks);
+      // 明示ブレイク（改丁/改ページ/改段）— 改段は段組でだけ意味を
+      // 持つ（単段では改行と同義なので落とす。連鎖の枠仕様で判定）
+      const gcols = (() => {
+        const o = c.areas[0] ? objById.get(c.areas[0]) : undefined;
+        return (
+          (o?.data as TextAreaData | undefined)?.genko?.columns ?? 1
+        );
+      })();
+      const brks = pz?.breaks?.filter(
+        (b) => b.kind === 'page' || gcols > 1,
+      );
+      let lr = layoutChain(txt, boxes, measurerRef.current, marks, brks);
       // v0.9: 青空画像注記の予約ゾーン — 注記の段の次の段から
       // 画像段数ぶんを回しこみ禁止にする（収まらないぶんは頁末
       // まで塞がり改ページ相当 — 案①。ゾーンは注記から導くので
@@ -2612,7 +2712,28 @@ export function App() {
           { areaId: string; zL: number; zR: number }
         >();
         zrec.set(c.id, zl);
+        // v0.10: 手配置の画像（回り込み・noWrap なし）に注記が
+        // 対応づいた注記はゾーンを立てない — 枠自身が障害として
+        // 回しこむため、ゾーン予約と二重になると空段ができる。
+        // ゾーン方式は空枠（noWrap）対応の注記専用に戻す。
+        // 枠の対応は空枠同期と同じ pos 順の index 対応
+        const phFr = engine.doc.objects
+          .filter((o) => {
+            const d = o.data as ImageData | undefined;
+            return (
+              o.kind === IMG_KIND &&
+              !!d?.placeholder &&
+              d.placeholder.chain === c.id
+            );
+          })
+          .sort(
+            (a, b) =>
+              (a.data as ImageData).placeholder!.pos -
+              (b.data as ImageData).placeholder!.pos,
+          );
         pz.images.forEach((img, zi) => {
+          const fr = phFr[zi];
+          if (fr && !(fr.data as ImageData).noWrap) return;
           const sl =
             lr.slices.find(
               (s) => img.pos < s.offset + s.text.length,
@@ -2638,7 +2759,9 @@ export function App() {
             marks,
             textOffset: sl.offset,
           });
-          const units = Array.from(tokenizeVertical(sl.text));
+          const units = Array.from(
+            tokenizeVertical(sl.text, marks, sl.offset),
+          );
           const lastCol = lv0.segs[lv0.segs.length - 1]?.col ?? 0;
           // brk 単位はどの seg にも属さない — 後続側は次の seg、
           // 直前側は前の seg を返す
@@ -2661,9 +2784,27 @@ export function App() {
           const colPost =
             iPost >= 0 ? (segOf(iPost, 1)?.col ?? lastCol) : lastCol;
           const col = Math.max(colPre + 1, colPost);
-          // 画像の段数 = ceil(画像幅 / 段ピッチ)。サイズ省略は
-          // 生成時と同じく版面幅60%扱い
-          const imgW = img.w > 0 ? img.w / MM_PX : b.width * 0.6;
+          // 画像の段数 = ceil(画像幅 / 段ピッチ)。枠生成・判型変更の
+          // 再フィットと同じ基準（ページ版面の60%/注記px→mm）で
+          // 揃える — エリア内寸基準だと枠とゾーンが食い違う（v0.10）
+          const imgW = (() => {
+            const cx = ao.x + ao.w / 2;
+            const cy = ao.y + ao.h / 2;
+            const pr = pageRects(
+              model.spec,
+              model.pages,
+              curAxis(),
+            ).find(
+              (r) =>
+                cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
+            );
+            const mi = pr
+              ? marginInsets(margins, pr.slot)
+              : { l: 0, r: 0, t: 0, b: 0 };
+            const bw = pr ? pr.w - mi.l - mi.r : b.width;
+            const bh = pr ? pr.h - mi.t - mi.b : b.height;
+            return noteImgSize(img, bw, bh).w;
+          })();
           const k = Math.max(1, Math.ceil(imgW / pitch));
           const zR = b.width - col * pitch; // = 段 col-1 の左端
           const zL = Math.max(0, b.width - (col + k) * pitch);
@@ -2706,13 +2847,25 @@ export function App() {
           // このゾーンによる押し出しを次の注記へ反映するため
           // その場で組み直す
           if (zR > zL || !fits)
-            lr = layoutChain(txt, boxes, measurerRef.current, marks);
+            lr = layoutChain(
+              txt,
+              boxes,
+              measurerRef.current,
+              marks,
+              brks,
+            );
         });
       }
       layouts.set(c.id, lr);
       for (const sl of lr.slices) {
         const b = boxById.get(sl.areaId);
-        if (b?.writing === 'vertical-rl' && b.obstacles?.length) {
+        if (
+          b?.writing === 'vertical-rl' &&
+          // 障害のある段内分割か、話区切り（＊◇※だけの行 — sep 単位の
+          // 天地中央寄せは絶対配置が必要）を含むスライスは区間計画が要る
+          (b.obstacles?.length ||
+            /(?:^|\n)[＊◇※]+(?:\n|$)/.test(sl.text))
+        ) {
           vflows.set(
             sl.areaId,
             layoutVertical(sl.text, {
@@ -2776,6 +2929,7 @@ export function App() {
       h: number,
       n: number,
       zone?: { zL: number; zR: number },
+      marks?: TextMark[],
     ): { x: number; y: number; next?: boolean } | null => {
       const d = { ...DEFAULT_TEXT_DATA, ...(ao.data as TextAreaData) };
       // 注記ゾーンが分かっていればその矩形へ直接置く — 右端を
@@ -2790,7 +2944,11 @@ export function App() {
       }
       const fs = Math.max(1, d.fontSize);
       const off = Math.max(0, Math.min(imgPos - sl.offset, sl.text.length));
-      const units = tokenizeVertical(sl.text.slice(0, off));
+      const units = tokenizeVertical(
+        sl.text.slice(0, off),
+        marks,
+        sl.offset,
+      );
       let cells = 0;
       if (d.writing === 'vertical-rl') {
         const perCol = Math.max(
@@ -2913,6 +3071,7 @@ export function App() {
           o.h,
           n,
           zn,
+          chainMarks(c),
         );
         if (!a2) continue;
         // 収まらず次頁へ回った場合はその頁が宛先 — 着地先の頁と
@@ -2960,12 +3119,9 @@ export function App() {
         const bw = pr.w - mi.l - mi.r;
         const bh = pr.h - mi.t - mi.b;
         // 注記の横×縦（px）は 96dpi 実寸 mm へ換算。版面に収まらない
-        // 指定は収まる比率で縮小、サイズ省略は版面幅の60%を既定
-        let w = img.w > 0 ? img.w / MM_PX : bw * 0.6;
-        let h = img.h > 0 ? img.h / MM_PX : w * 0.75;
-        const sc = Math.min(1, bw / w, bh / h);
-        w *= sc;
-        h *= sc;
+        // 指定は収まる比率で縮小、サイズ省略は版面幅の60%を既定 —
+        // ゾーン計算・判型変更の再フィットと同じ基準（noteImgSize）
+        const { w, h } = noteImgSize(img, bw, bh);
         // 注記由来の画像は回り込みしないブロック扱い — 注記の
         // 段の次の段から画像が始まる（縦版）/ 次の行の上端（横版）。
         // 画像下の余白は障害の全高化で回しこみ禁止になる
@@ -2981,6 +3137,7 @@ export function App() {
           h,
           n,
           zn,
+          chainMarks(c),
         ) ?? { x: ao!.x, y: ao!.y };
         const { x, y } = a;
         adds.push({
@@ -3769,7 +3926,13 @@ export function App() {
       // 縦書き: スライス全体を組版単位へ分解（fitVertical と同じ分割で
       // 計測と描画を一致させる）。ラン境界にまたがる単位は先頭ランの
       // 装飾に寄せる（v0.1 の簡約 — ルビを分断しないため）
-      const units = vertical ? tokenizeVertical(sl?.text ?? '') : null;
+      const units = vertical
+        ? tokenizeVertical(
+            sl?.text ?? '',
+            c ? chainMarks(c) : undefined,
+            sl?.offset ?? 0,
+          )
+        : null;
       // v0.4: 障害のある縦書きスライスは段×区間計画で絶対配置する。
       // units の区間割当は計画の u0/u1 が指す（同じトークン化列）
       const vflow = vertical ? vflows.get(o.id) : undefined;
@@ -3867,7 +4030,11 @@ export function App() {
                         width: vflow.pitch * MM_PX * z,
                       }}
                     >
-                      {vunitSpans(units!.slice(s.u0, s.u1), vStyleOf)}
+                      {vunitSpans(
+                        units!.slice(s.u0, s.u1),
+                        vStyleOf,
+                        s.h * MM_PX * z,
+                      )}
                     </div>
                   ))
                 : vunitSpans(units!, vStyleOf)
@@ -4503,6 +4670,8 @@ export function App() {
             onHashira: setHashira,
             margins,
             onMargins: applyMargins,
+            collapseNl,
+            onCollapseNl: setCollapseNl,
             hanmenCells,
             fit400fs: cellArea ? fit400fs : null,
             onFit400: fit400,
@@ -4573,6 +4742,14 @@ export function App() {
               underline: d.underline,
               link: d.link,
             });
+          }}
+          unitsFor={(o) => {
+            const c = chainOf(chains, o.id);
+            if (!c) return [];
+            const lr = layouts.get(c.id);
+            const sl = lr?.slices.find((s) => s.areaId === o.id);
+            if (!sl) return [];
+            return tokenizeVertical(sl.text, chainMarks(c), sl.offset);
           }}
           areaAlone={(o) => {
             const c = chainOf(chains, o.id);

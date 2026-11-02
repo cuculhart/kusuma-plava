@@ -53,26 +53,45 @@ export interface LayoutResult {
   overflow: string;
 }
 
+/** 明示ブレイク位置（text 座標）— 青空の改丁/改ページ/改段注記から
+    導く。この位置以降の文字は必ず次のエリアへ送られる */
+export interface ChainBreak {
+  pos: number;
+  /** 'page' = 改丁/改ページ、'col' = 改段。解釈は呼び出し側
+      （単段組版の改段は意味を持たないためフィルタする想定） */
+  kind?: 'page' | 'col';
+}
+
 /**
  * 連鎖テキストをエリア列へ貪欲に配分する。
  * boxes の順序 = 連鎖順。残りは overflow に返す。
  * marks を渡すと計測へ textOffset 付きで引き渡される。
+ * breaks（text 座標・pos 昇順）を渡すと、その位置をまたぐ
+ * スライスをブレイク位置で打ち切って次エリアへ送る。
  */
 export function layoutChain(
   text: string,
   boxes: AreaBox[],
   measure: TextMeasurer,
   marks?: TextMark[],
+  breaks?: ChainBreak[],
 ): LayoutResult {
   const slices: Slice[] = [];
   let rest = text;
   let consumed = 0;
+  let bi = 0;
   for (const b of boxes) {
-    const n = measure.fit(rest, {
+    let n = measure.fit(rest, {
       ...b,
       marks,
       textOffset: consumed,
     });
+    // ブレイク位置がスライス内にあればそこで打ち切る — 境界上
+    // （pos === consumed）は既に新エリアの頭なので素通し
+    while (breaks && bi < breaks.length && breaks[bi].pos <= consumed)
+      bi++;
+    if (breaks && bi < breaks.length && breaks[bi].pos < consumed + n)
+      n = breaks[bi].pos - consumed;
     slices.push({ areaId: b.id, text: rest.slice(0, n), offset: consumed });
     consumed += n;
     rest = rest.slice(n);
@@ -94,8 +113,9 @@ export interface TextAttrs {
   /** 傍点（青空文庫注記由来 — 描画は一律「・」= sesame） */
   boten?: boolean;
   /** ルビ（ヨミガナ文字列）。縦書きエリアで <ruby> として描く。
-      v0.1 では本文の ｜《》 記法を描画時に解釈するため未使用 — 将来
-      marks 経由でルビを持たせるための予約属性（傍点・圏点も想定） */
+      v0.10: marks 駆動の正規経路 — 本文の ｜《》 記法はパース時に
+      このマークへ変換される（親字範囲 = マーク範囲）。記法の
+      描画時解釈は marks が無い経路のフォールバックとして残る */
   ruby?: string;
 }
 

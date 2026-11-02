@@ -65,6 +65,62 @@ describe('tokenizeVertical — 組版単位の分解', () => {
     const u = tokenizeVertical('あ\nい');
     expect(u[1]).toMatchObject({ kind: 'brk', cells: 0 });
   });
+
+  it('marks の attrs.ruby は不可分の ruby 単位になる（v0.10）', () => {
+    // chain 座標のマークを textOffset でローカル化する
+    const marks: TextMark[] = [
+      { start: 4, end: 6, attrs: { ruby: 'かんじ' } },
+    ];
+    const u = tokenizeVertical('彼は漢字を読む', marks, 2);
+    const r = u.find((x) => x.kind === 'ruby');
+    expect(r).toMatchObject({
+      start: 2,
+      raw: 2,
+      cells: 2,
+      text: '漢字',
+      yomi: 'かんじ',
+    });
+    expect(u.reduce((n, x) => n + x.raw, 0)).toBe('彼は漢字を読む'.length);
+    // 他の単位は通常字 — 記法が混ざらない
+    expect(u.every((x) => x.kind === 'ruby' || x.kind === 'char')).toBe(true);
+  });
+
+  it('marks の ruby はレイアウトでも親字数だけセルを消費する', () => {
+    const marks: TextMark[] = [
+      { start: 0, end: 2, attrs: { ruby: 'さだめ' } },
+    ];
+    const b = { ...box(6.4, 40), marks };
+    // 親字2字 + 3字 = 5セル → 全文(raw 5)が段1本に収まる
+    expect(fitVertical('運命と歩む', b)).toBe(5);
+  });
+});
+
+describe('tokenizeVertical — 話区切り sep 単位（v0.10）', () => {
+  it('＊/◇/※ だけの段落は不可分の sep 単位になる', () => {
+    const u = tokenizeVertical('あ。\n＊＊＊\nい。');
+    const s = u.find((x) => x.kind === 'sep');
+    expect(s).toMatchObject({ start: 3, raw: 3, cells: 3, text: '＊＊＊' });
+    expect(u.reduce((n, x) => n + x.raw, 0)).toBe('あ。\n＊＊＊\nい。'.length);
+  });
+
+  it('段落途中の区切り印は sep にならない（文に続く・文字が混在）', () => {
+    // 行頭でない ＊ は通常字
+    const u = tokenizeVertical('あ＊い');
+    expect(u.every((x) => x.kind === 'char')).toBe(true);
+    // 区切り印の後に本文が続く行も sep にならない
+    const v = tokenizeVertical('＊あい\nう');
+    expect(v[0]).toMatchObject({ kind: 'char', text: '＊' });
+  });
+
+  it('sep は1セル/字で段を消費し brk が段を閉じる', () => {
+    // 10セル高の箱 — 「あ。」+ sep3字 + 「い。」は3段に分かれる
+    const u = layoutVertical('あ。\n＊＊＊\nい。', box(40, 40));
+    const sep = u.segs.find(
+      (s) => s.u1 - s.u0 === 1,
+    );
+    expect(sep).toBeDefined();
+    expect(sep!.col).toBe(1); // 2段目（0起き）
+  });
 });
 
 describe('fitVertical — 単位カウントの収容計算', () => {

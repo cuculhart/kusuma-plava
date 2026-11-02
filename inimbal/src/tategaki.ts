@@ -13,7 +13,7 @@
 //   - box.obstacles = 回しこみ障害（エリアローカル mm）— 交差する段は
 //     縦範囲をセル境界へスナップして除き、上下両区間へ配分（段内分割）
 
-import type { AreaBox } from './chain';
+import type { AreaBox, TextMark } from './chain';
 
 /** ルビ欄の幅 — 字セルに対する比率。段ピッチ = fontSize × (1 + これ) */
 export const RUBY_LANE_RATIO = 0.6;
@@ -32,7 +32,7 @@ const RE_RUBY_IM = new RegExp('^(' + KANJI + '+)《([^《》\\n]{1,50})》');
 
 /** 縦組版の組版単位。text 先頭基準の raw/text で厳密に分割する */
 export interface VUnit {
-  kind: 'char' | 'ruby' | 'brk';
+  kind: 'char' | 'ruby' | 'brk' | 'sep';
   /** 原文での開始位置（スライス先頭基準） */
   start: number;
   /** 原文での長さ（UTF-16 コードユニット） */
@@ -53,12 +53,73 @@ export interface VUnit {
  * 縦書き本文を組版単位へ分解する遅延ジェネレータ — tokenizeVertical の
  * 逐次版。レイアウト側が箱を満たした時点で打ち切れるよう、要求された
  * 分だけ単位を生成する（残り全文を先読みしない — 大文書の fit 高速化）
+ *
+ * marks + textOffset を渡すと TextAttrs.ruby 付きマークが不可分の
+ * ruby 単位になる（v0.10: ルビの TextMark 化 — 記法はパース時に
+ * marks へ変換されるため、こちらが正規経路。marks は chain 座標で、
+ * text の先頭が chain 内 textOffset に対応する想定 — layoutVertical の
+ * box.marks/box.textOffset と同じ規約）。marks が無い・範囲外の
+ * テキストは従来どおり記法テキストからの解釈へフォールバックする。
  */
-export function* tokenizeUnits(text: string): Generator<VUnit, void, void> {
+export function* tokenizeUnits(
+  text: string,
+  marks?: TextMark[],
+  textOffset = 0,
+): Generator<VUnit, void, void> {
+  // marks 由来のルビ（text ローカル座標へ変換・開始位置で整列）
+  const rm = (marks ?? [])
+    .filter(
+      (m) =>
+        m.attrs.ruby !== undefined &&
+        m.end > textOffset &&
+        m.start < textOffset + text.length,
+    )
+    .map((m) => ({
+      s: Math.max(0, m.start - textOffset),
+      e: Math.min(text.length, m.end - textOffset),
+      yomi: m.attrs.ruby!,
+    }))
+    .sort((a, b) => a.s - b.s);
+  let ri = 0; // i は単調増加 — マーク側も前から消費する
   let i = 0;
   while (i < text.length) {
+    while (ri < rm.length && rm[ri].s < i) ri++;
+    const r = rm[ri];
+    if (r && r.s === i && r.e > r.s) {
+      const base = text.slice(r.s, r.e);
+      yield {
+        kind: 'ruby',
+        start: i,
+        raw: r.e - r.s,
+        cells: base.length,
+        text: base,
+        yomi: r.yomi,
+      };
+      i = r.e;
+      continue;
+    }
+
     const rest = text.slice(i);
     let m: RegExpMatchArray | null;
+    // 話区切り — 段落が区切り印（＊◇※）のみで構成される場合は
+    // 不可分の sep 単位にする。直後の \n（または文末）までが対象で、
+    // 描画側が区間の天地中央へ置く（書籍の区切りの慣例）。
+    // 段落途中の区切り印（先頭が \n/文頭でない）は通常字のまま
+    if (
+      (i === 0 || text[i - 1] === '\n') &&
+      (m = rest.match(/^([＊◇※]+)(?=\n|$)/))
+    ) {
+      const run = m[1];
+      yield {
+        kind: 'sep',
+        start: i,
+        raw: run.length,
+        cells: run.length,
+        text: run,
+      };
+      i += run.length;
+      continue;
+    }
     const ruby = (base: string, yomi: string, raw: number): VUnit => ({
       kind: 'ruby',
       start: i,
@@ -138,8 +199,12 @@ export function* tokenizeUnits(text: string): Generator<VUnit, void, void> {
  * 不可分単位、半角英数ランは tcy/rc、それ以外は1字1単位。
  * 返す units の raw を順に足すと text.length と一致する。
  */
-export function tokenizeVertical(text: string): VUnit[] {
-  return [...tokenizeUnits(text)];
+export function tokenizeVertical(
+  text: string,
+  marks?: TextMark[],
+  textOffset = 0,
+): VUnit[] {
+  return [...tokenizeUnits(text, marks, textOffset)];
 }
 
 // 糖衣のグローバル版（投稿用テキスト出力の正規化用 — v0.3）。
@@ -166,9 +231,12 @@ export function normalizeRuby(text: string): string {
 const HEAD_KINSOKU = new Set([
   ...'。、・：；！？!?:;,.)]}〕］｝〉》」』〙〛〜ゝゞ々ヽヾー…‥',
   ...'ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ',
+  // v0.10: 語中の半角記号を段頭にしない — ハイフン語や数値+単位が
+  // 段境界で分断されるのを抑える（日本-1・50%・C# 等）
+  ...'-+/#%_',
 ]);
-// 行末禁則: 開き括弧（全半角）
-const END_KINSOKU = new Set([...'（〔［｛〈《「『〘〚([{']);
+// 行末禁則: 開き括弧（全半角）と、語中で段末に残したくないハイフン
+const END_KINSOKU = new Set([...'（〔［｛〈《「『〘〚([{', '-']);
 
 /** 段頭に来られない字か（行頭禁則） */
 export const isHeadKinsoku = (ch: string) => HEAD_KINSOKU.has(ch);
@@ -249,7 +317,7 @@ export function layoutVertical(text: string, box: AreaBox): VFlow {
   // 壊れないよう描画側と同じ分割を使う）。箱が満たされた時点で
   // 打ち切れるよう遅延トークン化する — fit が残り全文をスキャン
   // しない（大文書の連鎖レイアウトで支配的コストだった）
-  const gen = tokenizeUnits(text);
+  const gen = tokenizeUnits(text, box.marks, off);
   const units: VUnit[] = []; // 消費分だけ逐次実体化
   const unitAt = (k: number): VUnit | undefined => {
     while (units.length <= k) {

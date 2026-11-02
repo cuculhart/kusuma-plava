@@ -119,7 +119,7 @@ export function MenuPane({
           <span className="m-label">
             Kusuma Plava
             <br />
-            <span className="m-ver">v0.9.0</span>
+            <span className="m-ver">v0.10.0</span>
           </span>
         )}
       </button>

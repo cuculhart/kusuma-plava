@@ -45,6 +45,9 @@ export interface AozoraResult {
   marks: TextMark[];
   /** 画像注記の解釈結果（text 上の位置＋説明・ファイル名・px サイズ） */
   images: AozoraImage[];
+  /** 改丁/改ページ/改段 注記のブレイク位置（変換後座標）—
+      layoutChain へ渡しスライスをその位置で打ち切らせる（v0.10） */
+  breaks: { pos: number; kind: 'page' | 'col' }[];
   /** 処理した注記の件数 */
   handled: number;
   /** 未対応で除去した注記の件数 */
@@ -72,6 +75,23 @@ const CAP_BLOCK_CLOSE = /^［＃ここでキャプション終わり］$/;
 // ファイル名、横○×縦○（全角数字あり）
 const IMAGE_NOTE = /^(.+)（([^（）]*)）入る$/;
 const IMG_SIZE = /横([０-９0-9]+)×縦([０-９0-9]+)/;
+// 明示ブレイク — 独立行のみ（行内に出ても区切り扱いしない）。
+// 改丁・改ページ・改見開き = 次エリア頭、改段 = 次の段
+const BREAK_NOTE = /^［＃改(丁|ページ|見開き|段)］$/;
+// ルビ記法 — トークン化（tategaki.ts）と同じ4系統をパース時に
+// marks へ変換する。先勝ちのオルタネーション順 = 判定順と同じ
+const KANJI = '[\\u4E00-\\u9FFF\\u3005\\u3006\\u30F6\\uF900-\\uFAFF]';
+const RUBY_ANY = new RegExp(
+  '\\[-([^\\[\\]-]{1,40})-\\] ?\\(-([^\\n-]{1,50})-\\)' +
+    '|(' +
+    KANJI +
+    '+)\\(-([^\\n-]{1,50})-\\)' +
+    '|｜([^\\n《》]{1,40})《([^《》\\n]{1,50})》' +
+    '|(' +
+    KANJI +
+    '+)《([^《》\\n]{1,50})》',
+  'g',
+);
 const SP = '　';
 const DIVIDER = /^[-—─━＿_＝=]{10,}\s*$/;
 const ABOUT = /^【[^】]*について】/;
@@ -93,18 +113,27 @@ interface Edit {
  */
 export function parseAozora(
   src: string,
-  opts: { headingFs?: number; captionFs?: number } = {},
+  opts: {
+    headingFs?: number;
+    captionFs?: number;
+    /** 空行を畳む — ソースの空行（\n\n 連続）を組版から除く。
+        青空本文の見栄え用空行を抑制するオプション（v0.10） */
+    collapseNl?: boolean;
+  } = {},
 ): AozoraResult {
   const headingFs = opts.headingFs ?? 6;
   const captionFs = opts.captionFs ?? 3.2;
+  const collapseNl = opts.collapseNl ?? false;
   const marks: TextMark[] = [];
   const images: AozoraImage[] = [];
+  const breaks: AozoraResult['breaks'] = [];
   const edits: Edit[] = [];
   let handled = 0;
   let dropped = 0;
   const outLines: string[] = [];
   let indent = 0; // ブロック字下げ中の字下げ幅
   let capS: number | null = null; // 開始注記待ちのキャプション開始位置
+  let pendingBreak = false; // 改ブレイク注記直後 — 続く空行を畳む
   let rawOff = 0; // 生テキストでの行頭位置
   let offset = 0; // 変換後テキストでの現在位置
 
@@ -133,6 +162,33 @@ export function parseAozora(
     if (preambleLines.has(ln)) {
       edits.push({
         rawS: lineRaw,
+        rawE: lineRaw + line.length,
+        parsedS: offset,
+        insLen: 0,
+      });
+      rawOff += line.length + 1;
+      continue;
+    }
+    // 改ブレイク — 直前の空行を畳んでブレイク位置を記録する。
+    // 続く空行も pendingBreak で畳む（注記周辺の見栄え用空行の対処）
+    const bm = line.match(BREAK_NOTE);
+    if (bm) {
+      handled++;
+      let popped = 0;
+      while (outLines.length && outLines[outLines.length - 1] === '') {
+        outLines.pop();
+        offset -= 1;
+        popped++;
+      }
+      if (!breaks.length || breaks[breaks.length - 1].pos !== offset)
+        breaks.push({
+          pos: offset,
+          kind: bm[1] === '段' ? 'col' : 'page',
+        });
+      pendingBreak = true;
+      // rawS を畳んだ空行の \n ぶん遡らせて位置マップを保つ
+      edits.push({
+        rawS: lineRaw - popped,
         rawE: lineRaw + line.length,
         parsedS: offset,
         insLen: 0,
@@ -230,11 +286,36 @@ export function parseAozora(
     // 行内の注記を順に処理（marks は変換後座標で記録）
     let out = '';
     let i = 0;
+    // 本文断片の emit — ルビ記法を marks へ変換しつつ out へ足す
+    // （記法文字は除去・親字のみ残る。rawBase = 断片先頭の生行
+    // index、shift 補正済み）。残す側の注記（対象ズレ等）は
+    // emit を通さず verbatim で足す — ［＃］内の《》を拾わない
+    const emit = (seg: string, rawBase: number) => {
+      let j = 0;
+      for (const rm of seg.matchAll(RUBY_ANY)) {
+        const base = rm[1] ?? rm[3] ?? rm[5] ?? rm[7];
+        const yomi = rm[2] ?? rm[4] ?? rm[6] ?? rm[8];
+        out += seg.slice(j, rm.index);
+        offset += rm.index! - j;
+        const bs = offset;
+        out += base;
+        offset += base.length;
+        marks.push({ start: bs, end: offset, attrs: { ruby: yomi } });
+        edits.push({
+          rawS: rawBase + rm.index!,
+          rawE: rawBase + rm.index! + rm[0].length,
+          parsedS: bs,
+          insLen: base.length,
+        });
+        j = rm.index! + rm[0].length;
+      }
+      out += seg.slice(j);
+      offset += seg.length - j;
+    };
     for (const m of body.matchAll(ANNOTATION)) {
       const at = m.index!;
       const note = m[1];
-      out += body.slice(i, at);
-      offset += at - i;
+      emit(body.slice(i, at), lineRaw + i + shift);
       i = at + m[0].length;
       const b = note.match(FW_BOTEN);
       const h = note.match(FW_HEADING);
@@ -328,11 +409,29 @@ export function parseAozora(
         });
       }
     }
-    out += body.slice(i);
-    offset += body.length - i;
-    outLines.push(out);
+    emit(body.slice(i), lineRaw + i + shift);
+    // 注記だけの行は除去後に空行として残ると \n が丸ごと1段を
+    // 消費して空段が出る — 行ごと畳む（raw 位置は保つ）
+    const noteOnly =
+      out === '' &&
+      line.includes('［＃') &&
+      line.replace(/［＃[^］]*］/g, '').trim() === '';
+    // 空行 — 改ブレイク直後 or 空行圧縮オプション時は畳む。
+    // 畳む行も \n 分の edit を残して位置マップのずれを抑える
+    const foldBlank = out === '' && (pendingBreak || collapseNl);
+    if (!noteOnly && !foldBlank) {
+      outLines.push(out);
+      offset += 1; // \n 分
+    } else if (out === '') {
+      edits.push({
+        rawS: lineRaw,
+        rawE: lineRaw + line.length + 1,
+        parsedS: offset,
+        insLen: 0,
+      });
+    }
+    if (out !== '') pendingBreak = false;
     rawOff += line.length + 1;
-    offset += 1; // \n 分
   }
 
   const toParsed = (p: number) => {
@@ -358,5 +457,5 @@ export function parseAozora(
   // 閉じられなかったキャプション開始は文書末までを範囲とみなす
   if (capS != null)
     marks.push({ start: capS, end: text.length, attrs: { fontSize: captionFs } });
-  return { text, marks, images, handled, dropped, toParsed, toRaw };
+  return { text, marks, images, breaks, handled, dropped, toParsed, toRaw };
 }

@@ -298,6 +298,9 @@ export function RightDock({
     /** v0.9: 版面マージン（天・地・ノド・小口・mm） */
     margins: PageMargins;
     onMargins: (m: PageMargins) => void;
+    /** v0.10: 空行を畳む（\n\n 連続を組版から除く） */
+    collapseNl: boolean;
+    onCollapseNl: (on: boolean) => void;
     /** v0.5: 枠と字サイズを文書設定の升目仕様に合わせる */
     onFit400: () => void;
   };
@@ -858,6 +861,8 @@ function DocProps({
   onHashira,
   margins,
   onMargins,
+  collapseNl,
+  onCollapseNl,
   hanmenCells,
   fit400fs,
   onFit400,
@@ -900,6 +905,8 @@ function DocProps({
   onHashira: (s: string) => void;
   margins: PageMargins;
   onMargins: (m: PageMargins) => void;
+  collapseNl: boolean;
+  onCollapseNl: (on: boolean) => void;
   hanmenCells: { v: number; h: number };
   fit400fs: number | null;
   onFit400: () => void;
@@ -1170,6 +1177,16 @@ function DocProps({
             onChange={(e) => onGridPrint(e.currentTarget.checked)}
           />
           {t('doc.gridPrint')}
+        </label>
+        {/* v0.10: 空行を畳む — ソースの \n\n 連続を組版から除く
+            （青空本文の見栄え用空行を抑制する読込ポリシー） */}
+        <label title={t('doc.collapseNlTip')}>
+          <input
+            type="checkbox"
+            checked={collapseNl}
+            onChange={(e) => onCollapseNl(e.currentTarget.checked)}
+          />
+          {t('doc.collapseNl')}
         </label>
         {/* v0.6: 升目線の色+透過 — キャンバス表示と印刷の両方へ適用 */}
         <div className="ins-row" title={t('doc.gridColorTip')}>

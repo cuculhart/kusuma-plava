@@ -71,6 +71,8 @@ const ja = {
   // 執筆ペイン（v0.2）
   'write.break': '話区切り',
   'write.breakTip': 'キャレット位置に話区切り行を挿入',
+  'write.rubyTip':
+    'ルビ記号を挿入 — 選択範囲は親字として ｜選択《》 へ包み、無選択なら《》だけ（直前の漢字連続へ掛かります）',
   'write.indent': '字下げ',
   'write.indentTip': '改行時に段落頭の全角スペースを自動挿入（縦書きエリアのみ）',
   'write.count': '$1字・$2枚',
@@ -175,6 +177,10 @@ const ja = {
   'doc.fit400': '升目枠に合わせる',
   'doc.fit400Tip':
     '枠と字サイズを 縦$1字×横$2段（=$3字/枚）の升目枠に合わせます — 約$4mm（部分書式は変えません）',
+  'doc.collapseNl': '空行を畳む',
+  'doc.collapseNlTip':
+    'ソースの空行（改行2連続以上）を組版から除きます — 青空文庫本文の見栄え用空行を抑制（改丁/改ページ注記の周辺は常に畳みます）',
+  'chain.outline': '話区切り・見出し',
   'doc.opacity': '用紙の透過',
   'doc.hint': '未選択 / 複数選択 — オブジェクトを選ぶとプロパティが出ます',
   'img.title': '画像',
@@ -321,6 +327,8 @@ const en: Record<keyof typeof ja, string> = {
 
   'write.break': 'Scene break',
   'write.breakTip': 'Insert a scene-break line at the caret',
+  'write.rubyTip':
+    'Insert ruby marks — selection is wrapped as ｜base《》, with no selection inserts 《》 only (applies to the preceding kanji run)',
   'write.indent': 'Indent',
   'write.indentTip':
     'Auto-insert an ideographic space at paragraph start on Enter (vertical areas only)',
@@ -423,6 +431,10 @@ const en: Record<keyof typeof ja, string> = {
   'doc.fit400': 'Fit grid frame',
   'doc.fit400Tip':
     'Refit the frame and font size to a $1 chars × $2 columns grid (=$3 chars/sheet) — ≈$4mm (per-run marks unchanged)',
+  'doc.collapseNl': 'Collapse blank lines',
+  'doc.collapseNlTip':
+    'Drop blank lines (2+ consecutive newlines) from the layout — suppresses decorative blank lines in aozora texts (lines around page-break notes are always folded)',
+  'chain.outline': 'Scene breaks & headings',
   'doc.opacity': 'Paper opacity',
   'doc.hint': 'Nothing / multiple selected — select an object for properties',
   'img.title': 'Image',

@@ -73,8 +73,8 @@ describe('parseAozora — 青空注記 → text + marks', () => {
     expect(r.toRaw(5)).toBe(7); // 逆マップ
   });
 
-  it('［＃…］ が無い文書はそのまま通る', () => {
-    const src = 'ただの本文。\n｜漢字《かんじ》のルビ';
+  it('［＃…］ が無い文書はそのまま通る（ルビ記法は marks へ変換）', () => {
+    const src = 'ただの本文。\n漢字のまま';
     const r = parseAozora(src);
     expect(r.text).toBe(src);
     expect(r.marks).toEqual([]);
@@ -82,10 +82,76 @@ describe('parseAozora — 青空注記 → text + marks', () => {
   });
 });
 
+describe('parseAozora — ルビの marks 化（v0.10）', () => {
+  it('｜親字《ヨミ》: 記法を除去し親字へ ruby mark', () => {
+    const r = parseAozora('彼は｜漢字《かんじ》を読む');
+    expect(r.text).toBe('彼は漢字を読む');
+    expect(r.marks).toEqual([
+      { start: 2, end: 4, attrs: { ruby: 'かんじ' } },
+    ]);
+  });
+
+  it('暗黙ルビ 親字《ヨミ》と糖衣 (- -) も marks へ', () => {
+    const r = parseAozora('運命《さだめ》と出会う');
+    expect(r.text).toBe('運命と出会う');
+    expect(r.marks).toEqual([
+      { start: 0, end: 2, attrs: { ruby: 'さだめ' } },
+    ]);
+    const s = parseAozora('運命(-さだめ-)に賭ける');
+    expect(s.text).toBe('運命に賭ける');
+    expect(s.marks).toEqual([
+      { start: 0, end: 2, attrs: { ruby: 'さだめ' } },
+    ]);
+  });
+
+  it('位置マップ: 記法ぶんの変位を編集記録で吸収', () => {
+    const r = parseAozora('｜漢字《かんじ》の本');
+    expect(r.text).toBe('漢字の本');
+    // 生の「の」(index 8) → 変換後 index 2、逆マップも一致
+    expect(r.toParsed(8)).toBe(2);
+    expect(r.toRaw(2)).toBe(8);
+  });
+});
+
+describe('parseAozora — 改ブレイク・空行ポリシー（v0.10）', () => {
+  it('［＃改ページ］は breaks へ記録、注記行は除去', () => {
+    const r = parseAozora('前。\n［＃改ページ］\n後。');
+    expect(r.text).toBe('前。\n後。');
+    expect(r.breaks).toEqual([{ pos: 3, kind: 'page' }]);
+    expect(r.handled).toBe(1);
+  });
+
+  it('周辺の空行を畳む（前後どちらも）', () => {
+    const r = parseAozora('前。\n\n［＃改丁］\n\n\n後。');
+    expect(r.text).toBe('前。\n後。');
+    expect(r.breaks).toEqual([{ pos: 3, kind: 'page' }]);
+  });
+
+  it('改段は col 種別で記録する', () => {
+    const r = parseAozora('［＃改段］');
+    expect(r.breaks).toEqual([{ pos: 0, kind: 'col' }]);
+  });
+
+  it('同じ位置の連続ブレイクは1つに畳む', () => {
+    const r = parseAozora('［＃改ページ］\n［＃改ページ］\n後。');
+    expect(r.breaks).toHaveLength(1);
+  });
+
+  it('collapseNl: 連続する空行を全て畳む', () => {
+    const r = parseAozora('一\n\n二\n\n\n三', { collapseNl: true });
+    expect(r.text).toBe('一\n二\n三');
+  });
+
+  it('collapseNl なし: 空行は空段として残る', () => {
+    const r = parseAozora('一\n\n二');
+    expect(r.text).toBe('一\n\n二');
+  });
+});
+
 describe('parseAozora — 画像注記（v0.9）', () => {
   it('標準形: 説明・ファイル名・横×縦を抽出し注記は除去', () => {
     const r = parseAozora('前。\n［＃庭の図（fig01.png、横400×縦300）入る］\n後。');
-    expect(r.text).toBe('前。\n\n後。');
+    expect(r.text).toBe('前。\n後。');
     expect(r.images).toEqual([
       { pos: 3, alt: '庭の図', file: 'fig01.png', w: 400, h: 300 },
     ]);
