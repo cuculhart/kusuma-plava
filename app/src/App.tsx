@@ -2761,6 +2761,45 @@ export function App() {
   )
     ? engine.version
     : 0;
+  // v0.14: 組版シグネチャ — layouts/zones の再計算条件を「組版に
+  // 効く値」の文字列同値へ絞る。patchObject は objects を毎回
+  // 新配列にするため、参照依存だと画像充填・選択・装飾だけの変更
+  // でも全連鎖の再組版（+注記ゾーンの逐次組版）が走っていた。
+  // 組版に効くのは: 連鎖エリアの矩形・回転・書体系（fontSize/
+  // family/bold/italic/writing/升目 — 段幅と改段判定）、障害に
+  // なり得る kinds（rect/ellipse/image）の矩形・回転・画像の
+  // noWrap/placeholder（枠対応付けと帯の有無）、版面・ページ構成・
+  // 積み軸・禁則。それ以外（画像 url・色・枠線など）の変更では
+  // 再計算しない。
+  const layoutSig = (() => {
+    const areaIds = new Set<string>();
+    for (const c of chains) for (const a of c.areas) areaIds.add(a);
+    const parts: string[] = [];
+    for (const o of engine.doc.objects) {
+      const member = areaIds.has(o.id);
+      if (!member && !OBSTACLE_KINDS.has(o.kind)) continue;
+      let s = `${o.id}@${o.x},${o.y},${o.w},${o.h},${o.rot ?? 0}`;
+      if (member) {
+        const d = o.data as TextAreaData | undefined;
+        s += `,${d?.fontSize},${d?.fontFamily},${d?.bold ? 1 : 0},${d?.italic ? 1 : 0},${d?.writing ?? ''},${d?.col ?? 0}`;
+        const g = d?.genko;
+        if (g) s += `,${g.cells}x${g.cols}n${g.columns ?? 1}g${g.gapMm ?? 0}`;
+      }
+      if (o.kind === IMG_KIND) {
+        const d = o.data as ImageData | undefined;
+        const ph = d?.placeholder;
+        s += `,${d?.noWrap ? 1 : 0},${ph ? `${ph.chain}:${ph.pos}` : ''}`;
+      }
+      parts.push(s);
+    }
+    return (
+      parts.join('|') +
+      `#${model.spec.size}${model.spec.landscape ? 'L' : 'P'},` +
+      `${model.pages.map((p) => p.slot).join('.')},` +
+      `${margins.top},${margins.bottom},${margins.inside},${margins.outside},` +
+      `${curAxis()},${kinsoku}`
+    );
+  })();
   const { layouts, vflows, zones } = useMemo(() => {
     const layouts = new Map<string, LayoutResult>();
     // v0.4: 回しこみ — 障害のある縦書きエリアは layoutVertical の
@@ -2848,13 +2887,73 @@ export function App() {
               (a.data as ImageData).placeholder!.pos -
               (b.data as ImageData).placeholder!.pos,
           );
+        // v0.14: 画像ごとの全体組み直しをやめる — 注記ごとに
+        // layoutChain を走らせると 88万字×89点で89回の全体組版に
+        // なった。貪欲配分なのでゾーン追加は「その枠以降」にしか
+        // 効かない — slices を部分再フィットして逐次決定は残す
+        // （結果は従来の全体組み直しと一致）。再フィットは次の
+        // 注記が乗るスライスまでに留め、残りは最後にまとめて。
+        const slices = [...lr.slices]; // 1枠=1スライス（空もある）
+        // slices[0..staleFrom) は現行の障害で確定 — ゾーン追加で
+        // staleFrom 以降が古くなる。consumed/bi は次に敷くスライスの
+        // 開始位置・ブレイク走査位置（staleFrom に追従）
+        let staleFrom = slices.length;
+        let consumed = txt.length;
+        let bi = 0;
+        const dirtyFrom = (j: number) => {
+          if (j >= staleFrom) return;
+          staleFrom = j;
+          consumed =
+            j > 0
+              ? slices[j - 1].offset + slices[j - 1].text.length
+              : 0;
+          bi = brks ? brks.findIndex((x) => x.pos > consumed) : 0;
+          if (bi < 0) bi = brks!.length;
+        };
+        // スライス j を現在の boxes（ゾーン込み）で敷き直す —
+        // layoutChain と同じ手続き（fit→ブレイク打ち切り）
+        const refitSlice = (j: number) => {
+          const b = boxes[j];
+          let n = measurerRef.current.fit(txt.slice(consumed), {
+            ...b,
+            marks,
+            textOffset: consumed,
+            continuesPara:
+              consumed > 0 && txt[consumed - 1] !== '\n',
+          });
+          while (brks && bi < brks.length && brks[bi].pos <= consumed)
+            bi++;
+          if (brks && bi < brks.length && brks[bi].pos < consumed + n)
+            n = brks[bi].pos - consumed;
+          slices[j] = {
+            areaId: b.id,
+            text: txt.slice(consumed, consumed + n),
+            offset: consumed,
+          };
+          consumed += n;
+        };
+        // pos を含むスライスの index（現行障害で確定したもの）
+        const locate = (pos: number): number => {
+          for (;;) {
+            for (let i = 0; i < staleFrom && i < slices.length; i++)
+              if (pos < slices[i].offset + slices[i].text.length)
+                return i;
+            if (staleFrom >= slices.length) return slices.length - 1;
+            refitSlice(staleFrom);
+            const done =
+              pos <
+              slices[staleFrom].offset +
+                slices[staleFrom].text.length;
+            staleFrom++;
+            if (done) return staleFrom - 1;
+          }
+        };
+        let zonesAdded = false;
         pz.images.forEach((img, zi) => {
           const fr = phFr[zi];
           if (fr && !(fr.data as ImageData).noWrap) return;
-          const sl =
-            lr.slices.find(
-              (s) => img.pos < s.offset + s.text.length,
-            ) ?? lr.slices[lr.slices.length - 1];
+          const si = locate(img.pos);
+          const sl = slices[si];
           const b = sl && boxById.get(sl.areaId);
           const ao = sl && objById.get(sl.areaId);
           const dd =
@@ -2933,19 +3032,21 @@ export function App() {
           const fits = col + k <= cols;
           // 注記の段〜頁末はゾーンとして塞ぐ（収まらないぶんは
           // 頁末まで = 改ページ — 後続本文は画像の次の段から）
-          if (zR > zL)
+          if (zR > zL) {
             b.obstacles = [
               ...(b.obstacles ?? []),
               { x: zL, y: 0, w: zR - zL, h: b.height },
             ];
+            dirtyFrom(si); // この枠以降のスライスを未確定にする
+            zonesAdded = true;
+          }
           if (fits) {
             zl.set(zi, { areaId: sl.areaId, zL, zR });
           } else {
             // 残り段に収まらない → 次スライスの枠の先頭 k 段を
             // 画像のゾーンにする（画像はそこへ置かれ、自身の帯は
             // 不要 — 帯→組版→アンカー→帯 の循環を避ける）
-            const nsl = lr.slices[lr.slices.indexOf(sl) + 1];
-            const nb = nsl && boxById.get(nsl.areaId);
+            const nb = boxes[si + 1];
             if (nb) {
               const nk = Math.min(
                 k,
@@ -2956,6 +3057,8 @@ export function App() {
                 ...(nb.obstacles ?? []),
                 { x: nzL, y: 0, w: nk * pitch, h: nb.height },
               ];
+              dirtyFrom(si + 1);
+              zonesAdded = true;
               zl.set(zi, {
                 areaId: nb.id,
                 zL: nzL,
@@ -2965,17 +3068,15 @@ export function App() {
               zl.set(zi, { areaId: sl.areaId, zL, zR });
             }
           }
-          // このゾーンによる押し出しを次の注記へ反映するため
-          // その場で組み直す
-          if (zR > zL || !fits)
-            lr = layoutChain(
-              txt,
-              boxes,
-              measurerRef.current,
-              marks,
-              brks,
-            );
         });
+        // 確定 — 未確定の残りスライスを現行障害で敷き直す
+        if (zonesAdded) {
+          while (staleFrom < slices.length) {
+            refitSlice(staleFrom);
+            staleFrom++;
+          }
+          lr = { slices, overflow: txt.slice(consumed) };
+        }
       }
       layouts.set(c.id, lr);
       for (const sl of lr.slices) {
@@ -3002,7 +3103,7 @@ export function App() {
     }
     return { layouts, vflows, zones: zrec };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chains, engine.doc.objects, liveGeom, aozora, kinsoku]);
+  }, [chains, liveGeom, aozora, layoutSig]);
 
   // ── v0.9: 画像注記 ↔ 空枠の同期 ──
   // 連鎖テキスト中の画像注記 `［＃説明（file、横○×縦○）入る］` に
@@ -3323,20 +3424,60 @@ export function App() {
   }, [aozora, layouts, chains, engine.doc.objects, model, margins]);
 
   // v0.9: 青空ZIP の同梱画像で空枠を自動充填 — 注記の file 名と
-  // 同梱画像ファイル名（basename 一致）を対応づける
+  // 同梱画像ファイル名（basename 一致）を対応づける。
+  // v0.14: onload ごとの patchObject をやめ、一巡ぶんのロード完了で
+  // まとめて1回の objects 更新にする — 充填1枚ごとに objects が変わり
+  // 帯・アンカー等の全エフェクトが再点火していた（fillPlaceholder と
+  // 同じ規則: 幅は枠のまま・高さは実画像アスペクトへ合わせ直す）
   useEffect(() => {
     const map = aozoraImgRef.current;
     if (!map.size) return;
+    const loaded: { id: string; url: string; aspect: number }[] = [];
+    let dispatched = 0;
+    let done = 0;
+    const flush = () => {
+      if (!loaded.length) return;
+      const fill = new Map(loaded.map((f) => [f.id, f]));
+      loaded.length = 0;
+      engine.setDoc({
+        ...engine.doc,
+        objects: engine.doc.objects.map((q) => {
+          const f = fill.get(q.id);
+          if (!f) return q;
+          return {
+            ...q,
+            h: q.w * f.aspect,
+            data: {
+              ...(q.data as ImageData),
+              url: f.url,
+              aspect: f.aspect,
+              lock: true,
+            },
+          };
+        }),
+      });
+    };
     for (const o of engine.doc.objects) {
       const d = o.data as ImageData | undefined;
       if (o.kind !== IMG_KIND || !d?.placeholder || d.url) continue;
       const url = map.get(d.placeholder.file.toLowerCase());
       if (!url || aozoraImgBusy.current.has(o.id)) continue;
       aozoraImgBusy.current.add(o.id);
+      dispatched++;
       const im = new Image();
       im.onload = () => {
         aozoraImgBusy.current.delete(o.id);
-        fillPlaceholder(o, url, im.naturalHeight / im.naturalWidth);
+        loaded.push({
+          id: o.id,
+          url,
+          aspect: im.naturalHeight / im.naturalWidth,
+        });
+        if (++done === dispatched) flush();
+      };
+      // 読めない画像は枠を充填せず busy も維持（従来どおり再試行
+      // しない）— ただし完了カウントは進めて他の充填を阻害しない
+      im.onerror = () => {
+        if (++done === dispatched) flush();
       };
       im.src = url;
     }
