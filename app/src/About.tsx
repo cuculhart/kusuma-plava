@@ -8,8 +8,8 @@ import type { TFunc } from './i18n';
 /** 表示バージョン — リリース時に package.json×3 と揃える同期対象 */
 export const APP_VERSION = 'v0.11.0';
 
-/** 製品ページ — About からの外部導線（cuculhart.com） */
-export const APP_URL = 'https://cuculhart.com/oss/kusuma/index.html';
+/** 配布元トップ — About からの外部導線（cuculhart.com） */
+export const APP_URL = 'https://cuculhart.com/';
 
 export function About({
   onClose,

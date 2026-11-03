@@ -48,7 +48,7 @@ const ja = {
   'menu.exportText': 'テキスト出力',
   'menu.exportTextTip':
     '連鎖テキストを .txt で書き出す（糖衣は ｜《》 へ正規化）',
-  'menu.about': 'このアプリについて',
+  'menu.about': 'このアプリ',
 
   // About（v0.11）
   'about.body':
@@ -313,7 +313,7 @@ const en: Record<keyof typeof ja, string> = {
   'menu.exportText': 'Export text',
   'menu.exportTextTip':
     'Export chain text as .txt (sugar normalized to ｜《》)',
-  'menu.about': 'About this app',
+  'menu.about': 'About',
 
   'about.body':
     'A vertical-writing layout editor for Japanese documents — write horizontally on the left and the text is composed vertically on genkōyōshi paper to the right. Write, and the typesetting flows.',
