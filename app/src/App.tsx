@@ -3918,7 +3918,7 @@ export function App() {
   // までの直近の章境界名をその頁の柱へ出す。境界の無い頁・
   // 先頭境界より前の頁は doc 設定の柱（hashira）へ畳む
   const pageChapter = (() => {
-    const m = new Map<number, string>();
+    const m = new Map<number, { name: string; start: number }>();
     // hit-test は実オブジェクト座標の軸で（執筆='x'・組版='y'・見開き）
     const prs = pageRects(model.spec, model.pages, curAxis());
     const pageOf = (o: WorldObject | undefined) => {
@@ -3947,21 +3947,38 @@ export function App() {
       }
       for (const [pi, end] of endByPage) {
         if (m.has(pi)) continue; // 先の連鎖の章を優先
-        let name: string | undefined;
+        let bound: { pos: number; name: string } | undefined;
         for (const b of bounds) {
-          if (b.pos < end) name = b.name;
+          if (b.pos < end) bound = b;
           else break;
         }
-        if (name) m.set(pi, name);
+        if (bound) {
+          // 章の開始頁 = 境界位置が載るスライスの頁（欄外クリックの
+          // ジャンプ先 — 章の途中頁から先頭頁へ戻れる）
+          const sl =
+            lr.slices.find(
+              (s) => bound!.pos < s.offset + s.text.length,
+            ) ?? lr.slices[lr.slices.length - 1];
+          m.set(pi, {
+            name: bound.name,
+            start: sl ? pageOf(objById.get(sl.areaId)) : -1,
+          });
+        }
       }
     }
     return m;
   })();
-  const hashiraAt = (index: number) => pageChapter.get(index) ?? hashira;
+  const hashiraAt = (index: number) =>
+    pageChapter.get(index)?.name ?? hashira;
+  const chapterStartAt = (index: number) =>
+    pageChapter.get(index)?.start ?? -1;
 
   const renderObject = (o: WorldObject) => {
     if (o.kind === PAGE_KIND) {
       const d = o.data as { index: number };
+      // v0.11: 柱 — 章名がある頁は章の先頭頁へジャンプできる
+      const hs = hashiraAt(d.index);
+      const csp = chapterStartAt(d.index);
       return (
         <>
         <div
@@ -4010,18 +4027,28 @@ export function App() {
         {/* v0.7: 柱 — 文書設定の文字列があるとき天余白へ縦書きで出す
             （升目枠の右辺揃え・上辺まで。印刷側 .hashira と同じ位置）。
             v0.11: 章境界のある頁は章名（hashiraAt）、無い頁は doc 設定 */}
-        {hashiraAt(d.index) !== '' && (
+        {hs !== '' && (
           <div
             className="hashira-canvas nodrag"
+            title={csp >= 0 ? t('hashira.toChapter') : undefined}
             style={{
               top: hashiraRect.top * MM_PX * z,
               right: hashiraRect.right * MM_PX * z,
               fontSize: Math.max(9, hashiraRect.size * MM_PX * z),
               fontFamily: docFont,
               color: docColor,
+              cursor: csp >= 0 ? 'pointer' : undefined,
             }}
+            onClick={
+              csp >= 0
+                ? (e) => {
+                    e.stopPropagation();
+                    focusPage(csp);
+                  }
+                : undefined
+            }
           >
-            {hashiraAt(d.index)}
+            {hs}
           </div>
         )}
       </>
