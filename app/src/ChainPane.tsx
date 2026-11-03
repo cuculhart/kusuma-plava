@@ -572,7 +572,7 @@ export function ChainPane({
           ◇
         </button>
         <button title={t('write.rubyTip')} onClick={insertRuby}>
-          ｜《
+          《
         </button>
         {/* ビュー⇄テキストのシンクボタン（執筆モード） */}
         {onCaret && (
