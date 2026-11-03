@@ -11,6 +11,20 @@
   （root/app/inimbal）+ package-lock.json + MenuPane の
   バージョン表記を揃える
 
+## パッケージ構成
+
+- **`inimbal/` は kusuma-plava 固有の独自パッケージ**。
+  silim-murlun の inimbal からフォークしたが、縦書き組版
+  （tategaki）・青空 marks・ChainBreak などで大きく分岐
+  したため独立宣言 — silim-murlun 側との同期・backport
+  は行わない（API は互換だが製品適合が違うため）
+- `kimetron/` は本体リポジトリ（`cuculhart/kimetron`）の
+  **git submodule**（silim-murlun と同じ構成。clone 時は
+  `git submodule init` または `--recursive`）。v1.7.0 へ
+  pin — 更新は `git -C kimetron fetch && checkout <tag>` →
+  親側でコミット。objectFilter は v1.7.0 で本体へ
+  backport 済み（2026-11-03）
+
 ## 環境固有の注意
 
 - **`node_modules/inimbal` は実体コピー**（npm workspaces
