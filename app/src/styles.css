@@ -1302,7 +1302,8 @@ body,
   overflow: hidden;
 }
 .side-panel.doc {
-  width: 300px;
+  width: 380px;
+  max-width: calc(100% - 60px);
 }
 .side-panel .sp-head {
   display: flex;
