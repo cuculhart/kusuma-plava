@@ -13,6 +13,9 @@ export interface DraftRec {
   at: string;
   /** packArchive 出力（書庫 zip） */
   slm: Uint8Array;
+  /** v0.11: 文書 fingerprint（createdAt + タイトル）— 別文書の
+      下書きを誤復元しないための照合キー。旧形式は欠落 */
+  fp?: string;
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -26,14 +29,21 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
-/** 下書きを保存し、保存時刻（ISO）を返す。失敗時は null。 */
-export async function saveDraft(slm: Uint8Array): Promise<string | null> {
+/** 下書きを保存し、保存時刻（ISO）を返す。失敗時は null。
+    fp = 文書 fingerprint（v0.11 — 誤復元抑止の照合キー） */
+export async function saveDraft(
+  slm: Uint8Array,
+  fp?: string,
+): Promise<string | null> {
   try {
     const db = await openDb();
     const at = new Date().toISOString();
     await new Promise<void>((res, rej) => {
       const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put({ at, slm } satisfies DraftRec, KEY);
+      tx.objectStore(STORE).put(
+        { at, slm, fp } satisfies DraftRec,
+        KEY,
+      );
       tx.oncomplete = () => res();
       tx.onerror = () => rej(tx.error);
     });
@@ -57,5 +67,22 @@ export async function loadDraft(): Promise<DraftRec | null> {
     return rec;
   } catch {
     return null;
+  }
+}
+
+/** 下書きを明示削除する（v0.11 — 自動保存のクリアUI用）。
+    失敗しても静かに終わる（表示側は setDraftAt(null) で畳む） */
+export async function clearDraft(): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((res, rej) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(KEY);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+    db.close();
+  } catch {
+    /* 削除失敗は握り潰す — 次回自動保存で上書きされる */
   }
 }

@@ -148,6 +148,30 @@ export function* tokenizeUnits(
       i += m[0].length;
       continue;
     }
+    // 全角2桁数字は縦中横 — 日付・号数などの2字を1セルへ横組で
+    // 収める実務ルール（3桁以上は通常字のまま — 詰めが潰れるため。
+    // 半角の既存 tcy ルールと同じく1セル扱いで禁則計算も合う）
+    const fd = rest.match(/^[０-９]+/)?.[0];
+    if (fd && fd.length === 2) {
+      yield {
+        kind: 'char',
+        start: i,
+        raw: 2,
+        cells: 1,
+        text: fd,
+        tcy: true,
+      };
+      i += 2;
+      continue;
+    }
+    if (fd && fd.length >= 3) {
+      // 3桁以上は通常字 — ラン全体を1字ずつ消費し、末尾2桁が
+      // 次スキャンで tcy へ誤認されないようにする
+      for (let j = 0; j < fd.length; j++)
+        yield { kind: 'char', start: i + j, raw: 1, cells: 1, text: fd[j] };
+      i += fd.length;
+      continue;
+    }
     if ((m = rest.match(HALF_RUN))) {
       const run = m[0];
       if (run.length <= 4) {

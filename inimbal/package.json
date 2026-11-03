@@ -2,7 +2,7 @@
   "name": "inimbal",
   "private": true,
   "version": "0.10.0",
-  "description": "INIMBAL — a stratum on Kimetron Isle. Text-chain flow: ordered linked frames, greedy distribution, rewind on unlink.",
+  "description": "INIMBAL — kusuma-plava 固有の組版 stratum on Kimetron Isle。Text-chain flow + 縦書き組版（tategaki）・青空 marks。silim-murlun の inimbal から独立 — 同期・backport はしない",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

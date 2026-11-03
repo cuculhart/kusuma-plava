@@ -47,6 +47,7 @@ export function MenuPane({
   onMode,
   spread,
   onToggleSpread,
+  onAbout,
   t,
 }: {
   collapsed: boolean;
@@ -85,6 +86,8 @@ export function MenuPane({
   /** v0.6: 見開き表示（組版モードのみ） */
   spread: boolean;
   onToggleSpread: () => void;
+  /** v0.11: About オーバーレイを開く */
+  onAbout: () => void;
   t: TFunc;
 }) {
   const item = (
@@ -116,11 +119,7 @@ export function MenuPane({
       >
         <span className="m-ic">≡</span>
         {!collapsed && (
-          <span className="m-label">
-            Kusuma Plava
-            <br />
-            <span className="m-ver">v0.10.0</span>
-          </span>
+          <span className="m-label">Kusuma Plava</span>
         )}
       </button>
       {item('執', t('menu.mode'), onMode, {
@@ -224,6 +223,9 @@ export function MenuPane({
           </select>
         </label>
       )}
+      {/* v0.11: About — バージョン表記はオーバーレイ側へ一本化
+          （メニューの m-ver は撤去） */}
+      {item('説', t('menu.about'), onAbout, { enIc: '?' })}
     </nav>
   );
 }

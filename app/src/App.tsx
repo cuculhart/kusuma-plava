@@ -40,6 +40,7 @@ import {
   type TextMark,
   type VFlow,
 } from 'inimbal';
+import { About } from './About';
 import { RightDock } from './Inspector';
 import { LinkWires, type LinkSel } from './LinkWires';
 import { MenuPane, type ShapeTool, type Theme } from './MenuPane';
@@ -48,7 +49,7 @@ import { Printout } from './Printout';
 import { Rulers } from './Rulers';
 import { makeT, tf, type Lang } from './i18n';
 import { ARCHIVE_EXT, packArchive, unpackArchive } from './docio';
-import { loadDraft, saveDraft } from './autosave';
+import { clearDraft, loadDraft, saveDraft } from './autosave';
 import { createCanvasMeasurer } from './measure';
 import { vunitSpans, type VStyle } from './vtrender';
 import { parseAozora, type AozoraResult } from './aozora';
@@ -538,6 +539,8 @@ export function App() {
     wire?: LinkSel;
   } | null>(null);
   const [printing, setPrinting] = useState(false);
+  // v0.11: About オーバーレイ
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem('kusuma-theme') as Theme) || 'standard',
   );
@@ -625,6 +628,14 @@ export function App() {
   // v0.3: 自動保存した下書きの時刻（「下書き HH:MM」表示用）
   const [draftAt, setDraftAt] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // v0.11: 下書き fingerprint — createdAt+タイトルの文書識別子。
+  // 下書きへ併記しておき、復元時に「最後に開いていた文書」の
+  // fp（localStorage）と照合 — 別文書の下書きを誤復元しない
+  // （書庫・新規への切替直後に古い下書きが蘇るケースの抑止）
+  const docFp = (createdAt: string, title: string) =>
+    `${createdAt}\n${title}`;
+  const stampDocFp = (createdAt: string, title: string) =>
+    localStorage.setItem('kusuma-docfp', docFp(createdAt, title));
   // 起動時の下書き確認が済むまで自動保存を走らせない
   // （確認前に空ドキュメントを保存して下書きを上書きするのを防ぐ）
   const draftReadyRef = useRef(false);
@@ -648,6 +659,7 @@ export function App() {
     hashira: string;
     margins: PageMargins;
     collapseNl: boolean;
+    goal: number;
   };
   const histRef = useRef<{ past: Snap[]; future: Snap[]; last: number }>({
     past: [],
@@ -834,6 +846,7 @@ export function App() {
         setLinkFrom(null);
         setSelLink(null);
         setCtxMenu(null);
+        setAboutOpen(false);
         setShapeTool(null);
         setShapeDrag(null);
         if (engine.mode === 'shape') engine.cancelShapeDraw();
@@ -1206,6 +1219,7 @@ export function App() {
     hashira,
     margins,
     collapseNl,
+    goal,
   });
   const applySnap = (s: Snap) => {
     applyingRef.current = true;
@@ -1256,6 +1270,7 @@ export function App() {
     setHashira(s.hashira);
     setMargins(s.margins);
     setCollapseNl(s.collapseNl);
+    setGoal(s.goal);
     snapRef.current = s;
     applyingRef.current = false;
   };
@@ -1295,7 +1310,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, goal]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -1314,6 +1329,10 @@ export function App() {
     void loadDraft().then((rec) => {
       draftReadyRef.current = true;
       if (!alive || !rec) return;
+      // v0.11: 別文書の下書きは復元しない — 最後に開いていた
+      // 文書の fp と不一致ならスキップ（両方無い旧形式は従来どおり）
+      const lastFp = localStorage.getItem('kusuma-docfp');
+      if (rec.fp && lastFp && rec.fp !== lastFp) return;
       try {
         const r = unpackArchive(rec.slm);
         const blank = {
@@ -1337,6 +1356,7 @@ export function App() {
           hashira: '',
           margins: { ...DEFAULT_MARGINS },
           collapseNl: false,
+          goal: 0,
         };
         const cur = {
           spec: r.model.spec,
@@ -1402,17 +1422,20 @@ export function App() {
           hashira,
           margins,
           collapseNl,
+          goal,
         });
-        void saveDraft(u8).then((at) => {
+        const fp = docFp(createdAtRef.current, docTitle);
+        void saveDraft(u8, fp).then((at) => {
           if (at) setDraftAt(at);
         });
+        stampDocFp(createdAtRef.current, docTitle);
       } catch {
         // 直列化・保存の失敗は静かに諦める（次の変更で再試行される）
       }
     }, 1500);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, goal]);
 
   // v0.7: 執筆モードのホイール = ページめくり — ページビューア化で
   // 可変ズームと自由パンを廃止したため、ホイール送りは現ページ±1へ
@@ -1555,6 +1578,9 @@ export function App() {
     setMargins({ ...DEFAULT_MARGINS });
     setCollapseNl(false);
     createdAtRef.current = new Date().toISOString();
+    // v0.11: 文書が切り替わった時点で fp を更新 — 旧文書の
+    // 下書きが残っていても次回起動で誤復元しない
+    stampDocFp(createdAtRef.current, '');
     dirtyRef.current = false;
     engine.setSelection([]);
     focusPage(0, d.model);
@@ -1582,6 +1608,7 @@ export function App() {
       hashira,
       margins,
       collapseNl,
+      goal,
     });
     const a = document.createElement('a');
     const url = URL.createObjectURL(
@@ -1674,7 +1701,11 @@ export function App() {
     setHashira(r.hashira);
     setMargins(r.margins ?? { ...DEFAULT_MARGINS });
     setCollapseNl(r.collapseNl === true);
+    setGoal(r.goal);
     createdAtRef.current = r.createdAt || new Date().toISOString();
+    // v0.11: 下書き fingerprint を開いた文書へ更新（下書き復元
+    // 経路でも同一 fp になるため二重書きは害なし）
+    stampDocFp(createdAtRef.current, r.title);
     dirtyRef.current = false;
     engine.setSelection([]);
     focusPage(0, r.model);
@@ -2260,6 +2291,9 @@ export function App() {
         setWriteChainId(null);
         engine.setSelection([]);
         createdAtRef.current = new Date().toISOString();
+        // v0.11: 読込は新規文書 — fp も新文書へ更新（旧文書の
+        // 下書きが残っていても誤復元しない）
+        stampDocFp(createdAtRef.current, docTitle);
         // 読込は新規文書なので必ず先頭ページへフィット
         focusPage(0, next);
         setBusy(null);
@@ -2625,6 +2659,45 @@ export function App() {
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chains, model.spec, genko, margins, collapseNl]);
+  // v0.11: 章境界（柱の章ごと版）— `［＃「…」は見出し］` と ＊◇※
+  // の区切り行を章の切れ目とみなす。スライス（parsed 座標）と
+  // 比較するため位置は toParsed で写す。章名は見出しの「…」、
+  // 区切り行は次の非空行の先頭（話区切り一覧のラベルと同じ規則）
+  const chapterBounds = useMemo(() => {
+    const m = new Map<string, { pos: number; name: string }[]>();
+    for (const c of chains) {
+      const pz = aozora.get(c.id);
+      const items: { pos: number; name: string }[] = [];
+      const lines = c.text.split('\n');
+      let off = 0;
+      for (let li = 0; li < lines.length; li++) {
+        const line = lines[li];
+        const hm = /［＃「(.{1,30})」は[大中小]見出し］/.exec(line);
+        const bm = /^[＊◇※]+\s*$/.exec(line);
+        if (hm) {
+          items.push({ pos: pz ? pz.toParsed(off) : off, name: hm[1] });
+        } else if (bm) {
+          let nl = '';
+          for (let k = li + 1; k < lines.length; k++) {
+            const t2 = lines[k]
+              .replace(/［＃[^］]*］/g, '')
+              .trim();
+            if (t2) {
+              nl = t2.slice(0, 24);
+              break;
+            }
+          }
+          items.push({
+            pos: pz ? pz.toParsed(off) : off,
+            name: nl || line.trim(),
+          });
+        }
+        off += line.length + 1;
+      }
+      if (items.length) m.set(c.id, items);
+    }
+    return m;
+  }, [chains, aozora]);
   // レイアウト・描画に使う marks = 青空注記由来（変換座標）
   // + ユーザー手動 marks（生座標→変換座標へマップ）
   const chainMarks = (c: Chain): TextMark[] => {
@@ -3835,6 +3908,51 @@ export function App() {
     return !hit || Math.abs(hit.index - curPage) <= 1;
   };
 
+  // v0.11: 柱の章ごと版 — ページに乗るスライス末尾（parsed 座標）
+  // までの直近の章境界名をその頁の柱へ出す。境界の無い頁・
+  // 先頭境界より前の頁は doc 設定の柱（hashira）へ畳む
+  const pageChapter = (() => {
+    const m = new Map<number, string>();
+    // hit-test は実オブジェクト座標の軸で（執筆='x'・組版='y'・見開き）
+    const prs = pageRects(model.spec, model.pages, curAxis());
+    const pageOf = (o: WorldObject | undefined) => {
+      if (!o) return -1;
+      const cx = o.x + o.w / 2;
+      const cy = o.y + o.h / 2;
+      return (
+        prs.find(
+          (r) =>
+            cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
+        )?.index ?? -1
+      );
+    };
+    for (const c of chains) {
+      const bounds = chapterBounds.get(c.id);
+      if (!bounds?.length) continue;
+      const lr = layouts.get(c.id);
+      if (!lr) continue;
+      // ページごとの最終スライス位置（parsed 座標・排他端）を集める
+      const endByPage = new Map<number, number>();
+      for (const sl of lr.slices) {
+        const pi = pageOf(objById.get(sl.areaId));
+        if (pi < 0) continue;
+        const end = sl.offset + sl.text.length;
+        if (end > (endByPage.get(pi) ?? -1)) endByPage.set(pi, end);
+      }
+      for (const [pi, end] of endByPage) {
+        if (m.has(pi)) continue; // 先の連鎖の章を優先
+        let name: string | undefined;
+        for (const b of bounds) {
+          if (b.pos < end) name = b.name;
+          else break;
+        }
+        if (name) m.set(pi, name);
+      }
+    }
+    return m;
+  })();
+  const hashiraAt = (index: number) => pageChapter.get(index) ?? hashira;
+
   const renderObject = (o: WorldObject) => {
     if (o.kind === PAGE_KIND) {
       const d = o.data as { index: number };
@@ -3877,14 +3995,16 @@ export function App() {
             style={{
               bottom: 4 * MM_PX * z,
               fontSize: Math.max(9, 10 * z),
+              color: docColor,
             }}
           >
             {d.index + 1}
           </div>
         )}
         {/* v0.7: 柱 — 文書設定の文字列があるとき天余白へ縦書きで出す
-            （升目枠の右辺揃え・上辺まで。印刷側 .hashira と同じ位置） */}
-        {hashira !== '' && (
+            （升目枠の右辺揃え・上辺まで。印刷側 .hashira と同じ位置）。
+            v0.11: 章境界のある頁は章名（hashiraAt）、無い頁は doc 設定 */}
+        {hashiraAt(d.index) !== '' && (
           <div
             className="hashira-canvas nodrag"
             style={{
@@ -3892,9 +4012,10 @@ export function App() {
               right: hashiraRect.right * MM_PX * z,
               fontSize: Math.max(9, hashiraRect.size * MM_PX * z),
               fontFamily: docFont,
+              color: docColor,
             }}
           >
-            {hashira}
+            {hashiraAt(d.index)}
           </div>
         )}
       </>
@@ -4161,6 +4282,7 @@ export function App() {
           onMode={onToggleMode}
           spread={spread}
           onToggleSpread={onToggleSpread}
+          onAbout={() => setAboutOpen(true)}
           t={t}
         />
         <div
@@ -4698,10 +4820,17 @@ export function App() {
             {tf(t, 'status.hanmen', hanmenCells.v, hanmenCells.h)}
           </span>
         )}
-        {/* v0.3: 自動保存した下書きの時刻 */}
+        {/* v0.3: 自動保存した下書きの時刻 — v0.11: クリックで明示削除 */}
         {draftAt && (
-          <span title={t('status.draftTip')}>
-            {tf(t, 'status.draft', fmtTime(draftAt))}
+          <span
+            title={t('status.draftClearTip')}
+            style={{ cursor: 'pointer' }}
+            onClick={() => {
+              void clearDraft();
+              setDraftAt(null);
+            }}
+          >
+            {tf(t, 'status.draft', fmtTime(draftAt))} ✕
           </span>
         )}
         <span>{tf(t, 'status.pages', model.pages.length)}</span>
@@ -4722,9 +4851,10 @@ export function App() {
           gridPrint={gridPrint}
           gridColor={gridColor}
           gridAlpha={gridAlpha}
-          hashira={hashira}
+          hashiraFor={hashiraAt}
           hashiraRect={hashiraRect}
           hashiraFont={docFont}
+          hashiraColor={docColor}
           objects={canon(engine.doc.objects)}
           sliceRuns={(o) => {
             const c = chainOf(chains, o.id);
@@ -4859,6 +4989,8 @@ export function App() {
           <div className="dlg busy">{busy}</div>
         </div>
       )}
+      {/* v0.11: About オーバーレイ */}
+      {aboutOpen && <About onClose={() => setAboutOpen(false)} t={t} />}
       {imgDlg && (
         <div className="dlg-backdrop">
           <div className="dlg">

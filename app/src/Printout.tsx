@@ -44,9 +44,10 @@ export function Printout({
   gridPrint,
   gridColor,
   gridAlpha,
-  hashira,
+  hashiraFor,
   hashiraRect,
   hashiraFont,
+  hashiraColor,
   objects,
   sliceRuns,
   unitsFor,
@@ -66,10 +67,14 @@ export function Printout({
   gridColor: string;
   gridAlpha: number;
   /** v0.7: 柱 — 天余白へ出す走り書き（空=出さない）。矩形は文書設定の
-      升目仕様から App 側で計算済みのページローカル mm、書体は文書既定 */
-  hashira: string;
+      升目仕様から App 側で計算済みのページローカル mm、書体は文書既定。
+      v0.11: 章ごと版 — 頁 index → 柱文字列の resolver（章境界のある
+      頁は章名、無い頁は doc 設定の柱が返る。App 側で解決済み） */
+  hashiraFor: (pageIndex: number) => string;
   hashiraRect: { top: number; right: number; height: number; size: number };
   hashiraFont: string;
+  /** v0.11: 柱・ノンブルの色 — 文書既定文字色に連動（暗い紙で埋もれない） */
+  hashiraColor: string;
   objects: WorldObject[];
   /** テキストエリア → 表示中スライスのラン列（連鎖レイアウト＋装飾解決済み） */
   sliceRuns: (o: WorldObject) => TextRun[];
@@ -413,9 +418,14 @@ export function Printout({
             {/* v0.9: フッター頁数表記は休眠（UI非表示・既定OFF） —
                 残存値で残る旧書庫のゴースト表示を出さないため撤去 */}
             {/* v0.3: ページ番号（ノンブル）— 版面下端中央、1 始まり */}
-            {pageNum && <div className="pnum">{pr.index + 1}</div>}
-            {/* v0.7: 柱 — 天余白・升目枠右辺揃えの縦書き（枠の上辺まで） */}
-            {hashira !== '' && (
+            {pageNum && (
+              <div className="pnum" style={{ color: hashiraColor }}>
+                {pr.index + 1}
+              </div>
+            )}
+            {/* v0.7: 柱 — 天余白・升目枠右辺揃えの縦書き（枠の上辺まで）。
+                v0.11: 章境界のある頁は章名（hashiraFor） */}
+            {hashiraFor(pr.index) !== '' && (
               <div
                 className="hashira"
                 style={{
@@ -423,9 +433,10 @@ export function Printout({
                   right: `${hashiraRect.right}mm`,
                   fontSize: `${hashiraRect.size}mm`,
                   fontFamily: hashiraFont,
+                  color: hashiraColor,
                 }}
               >
-                {hashira}
+                {hashiraFor(pr.index)}
               </div>
             )}
           </div>

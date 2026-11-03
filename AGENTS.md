@@ -8,8 +8,8 @@
   （実メールは privacy 設定で push を弾かれる）:
   `GIT_AUTHOR_EMAIL=GIT_COMMITTER_EMAIL=332349660+cuculhart@users.noreply.github.com`
 - タグは `v0.x.0` 形式。リリース時は package.json×3
-  （root/app/inimbal）+ package-lock.json + MenuPane の
-  バージョン表記を揃える
+  （root/app/inimbal）+ package-lock.json + About 画面の
+  バージョン表記（app/src/About.tsx の APP_VERSION）を揃える
 
 ## パッケージ構成
 

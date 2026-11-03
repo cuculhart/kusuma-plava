@@ -48,6 +48,12 @@ const ja = {
   'menu.exportText': 'テキスト出力',
   'menu.exportTextTip':
     '連鎖テキストを .txt で書き出す（糖衣は ｜《》 へ正規化）',
+  'menu.about': 'このアプリについて',
+
+  // About（v0.11）
+  'about.body':
+    '日本の小説家・教科書制作者のための縦書き執筆エディタ。左ペインで横書きに書くと、右の版面が縦書きの原稿用紙として組まれていきます。木漏れ日と花筏 — 文を書けば、組版が流れ出す。',
+  'about.author': '作者・配布元',
 
   // 連鎖ペイン
   'chain.title': '連鎖テキスト',
@@ -84,6 +90,7 @@ const ja = {
     '現在の執筆エリアに収まる升目数（縦=1段の字数、横=段数）。用紙・向き・字サイズに追従',
   'status.draft': '下書き $1',
   'status.draftTip': '自動保存した下書きの時刻',
+  'status.draftClearTip': '自動保存した下書き — クリックで削除',
   'hint.draftRestored': '下書きを復元しました',
   'hint.exported': 'テキストを書き出しました',
   'hint.imported': '$1 を読み込みました',
@@ -306,6 +313,11 @@ const en: Record<keyof typeof ja, string> = {
   'menu.exportText': 'Export text',
   'menu.exportTextTip':
     'Export chain text as .txt (sugar normalized to ｜《》)',
+  'menu.about': 'About this app',
+
+  'about.body':
+    'A vertical-writing layout editor for Japanese documents — write horizontally on the left and the text is composed vertically on genkōyōshi paper to the right. Write, and the typesetting flows.',
+  'about.author': 'Author / distribution',
 
   'chain.title': 'Chain text ($1 areas)',
   'chain.close': 'Close',
@@ -341,6 +353,7 @@ const en: Record<keyof typeof ja, string> = {
     'Genkōyōshi cells in the current writing area (chars per column × columns). Follows paper, orientation, and font size',
   'status.draft': 'Draft $1',
   'status.draftTip': 'Time of the autosaved draft',
+  'status.draftClearTip': 'Autosaved draft — click to delete',
   'hint.draftRestored': 'Draft restored',
   'hint.exported': 'Text exported',
   'hint.imported': '$1 imported',

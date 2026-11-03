@@ -159,11 +159,7 @@ body,
   opacity: 0.5;
 }
 
-.m-ver {
-  font-size: 10px;
-  color: var(--muted);
-  font-weight: normal;
-}
+/* v0.11: m-ver 撤去 — バージョン表記は About オーバーレイへ一本化 */
 
 .m-toggle .m-label {
   font-weight: bold;
@@ -773,6 +769,11 @@ body,
   background: var(--surface2);
 }
 
+.chain-outline .outline-count {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 /* ── 検索・置換バー（v0.3）— テキスト欄の直上の帯 ── */
 .find-bar {
   display: flex;
@@ -1138,6 +1139,39 @@ body,
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 4px;
+}
+
+/* ── About オーバーレイ（v0.11） ── */
+.dlg.about {
+  width: 400px;
+  max-width: calc(100vw - 48px);
+}
+
+.about-name {
+  margin: 0;
+  font-size: 20px;
+}
+
+.about-ver {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 2px 0 12px;
+}
+
+.about-body {
+  font-size: 13px;
+  line-height: 1.8;
+  margin: 0 0 12px;
+}
+
+.about-author {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.about-author a {
+  color: var(--accent);
 }
 
 /* ── 右クリックメニュー（Z-order） ── */

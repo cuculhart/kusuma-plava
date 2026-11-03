@@ -112,6 +112,14 @@ describe('tokenizeVertical — 話区切り sep 単位（v0.10）', () => {
     expect(v[0]).toMatchObject({ kind: 'char', text: '＊' });
   });
 
+  it('全角2桁数字は縦中横（1セル）、1桁・3桁以上は通常字', () => {
+    const u = tokenizeVertical('１２月３日に１２３号');
+    const tcyUnits = u.filter((x) => x.tcy);
+    // 「１２」だけが tcy — 「３」「１２３」は通常字
+    expect(tcyUnits).toHaveLength(1);
+    expect(tcyUnits[0]).toMatchObject({ text: '１２', cells: 1 });
+  });
+
   it('sep は1セル/字で段を消費し brk が段を閉じる', () => {
     // 10セル高の箱 — 「あ。」+ sep3字 + 「い。」は3段に分かれる
     const u = layoutVertical('あ。\n＊＊＊\nい。', box(40, 40));

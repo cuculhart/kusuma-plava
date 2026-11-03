@@ -84,6 +84,9 @@ interface ArchiveDoc {
   /** v0.10: 空行を畳む（ソースの \n\n 連続を組版から除く）。
       欠落=false — 従来の 1空行=1空段 */
   collapseNl?: boolean;
+  /** v0.11: 目標字数（0=未設定）。localStorage から文書へ移行 —
+      doc ごとに持てるよう書庫へ保存 */
+  goal?: number;
 }
 
 const EXT_OF_MIME: Record<string, string> = {
@@ -140,6 +143,7 @@ export function packArchive(input: {
   hashira?: string;
   margins?: PageMargins;
   collapseNl?: boolean;
+  goal?: number;
 }): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   let imgN = 0;
@@ -178,6 +182,8 @@ export function packArchive(input: {
     margins: input.margins,
     // false は書き出さない（欠落=既定OFF）
     collapseNl: input.collapseNl || undefined,
+    // 0 は書き出さない（欠落=未設定）
+    goal: input.goal ? Math.round(input.goal) : undefined,
   };
   files['doc.json'] = strToU8(JSON.stringify(doc));
   return zipSync(files);
@@ -211,6 +217,8 @@ export function unpackArchive(bytes: Uint8Array): {
   margins?: PageMargins;
   /** v0.10: 空行を畳む。欠落・不正値は false */
   collapseNl: boolean;
+  /** v0.11: 目標字数。欠落・不正値は 0（未設定） */
+  goal: number;
 } {
   const files = unzipSync(bytes);
   const raw = files['doc.json'];
@@ -308,5 +316,9 @@ export function unpackArchive(bytes: Uint8Array): {
     hashira: typeof doc.hashira === 'string' ? doc.hashira : '',
     margins: unpackMargins(doc),
     collapseNl: doc.collapseNl === true,
+    goal:
+      typeof doc.goal === 'number' && doc.goal > 0
+        ? Math.round(doc.goal)
+        : 0,
   };
 }

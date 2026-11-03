@@ -407,7 +407,14 @@ export function ChainPane({
       }
       off += line.length + 1;
     }
-    return items;
+    // v0.11: 区間の字数 — 次の区切りまでの文字数（話ごとの
+    // 分量を見る。末尾区切りは文末まで）
+    return items.map((it, i) => ({
+      ...it,
+      count:
+        (i + 1 < items.length ? items[i + 1].pos : chain.text.length) -
+        it.pos,
+    }));
   })();
   const jumpTo = (pos: number) => {
     const el = taRef.current;
@@ -655,7 +662,8 @@ export function ChainPane({
           </summary>
           {outline.map((s, i) => (
             <button key={i} onClick={() => jumpTo(s.pos)}>
-              {s.mark} {s.label}
+              {s.mark} {s.label}{' '}
+              <span className="outline-count">{s.count}字</span>
             </button>
           ))}
         </details>
