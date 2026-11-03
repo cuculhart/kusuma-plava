@@ -2190,6 +2190,7 @@ export function App() {
     text: string,
     name: string,
     fix?: { spec: PageModel['spec']; genko: GenkoGrid },
+    title?: string,
   ) => {
     requestAnimationFrame(() =>
       setTimeout(() => {
@@ -2291,9 +2292,14 @@ export function App() {
         setWriteChainId(null);
         engine.setSelection([]);
         createdAtRef.current = new Date().toISOString();
-        // v0.11: 読込は新規文書 — fp も新文書へ更新（旧文書の
-        // 下書きが残っていても誤復元しない）
-        stampDocFp(createdAtRef.current, docTitle);
+        // v0.11: 読込は新規文書 — 文書メタ（タイトル・柱）も新文書の
+        // ものへ（旧文書の値が残って文書設定が不整合になるのを防ぐ）。
+        // タイトルは青空ZIP=先頭行（作品名）/txt=ファイル名
+        const ttl = (title ?? name.replace(/\.[^.]+$/, '')).slice(0, 40);
+        setDocTitle(ttl);
+        setHashira('');
+        // fp も新文書へ更新（旧文書の下書きが残っていても誤復元しない）
+        stampDocFp(createdAtRef.current, ttl);
         // 読込は新規文書なので必ず先頭ページへフィット
         focusPage(0, next);
         setBusy(null);
@@ -4966,14 +4972,21 @@ export function App() {
             // 読むと画像と文字がずれる。遅延実行内で同じ model へ
             // 適用しないと不整合になるので fix として渡す
             setGenko({ cells: 43, cols: 17, columns: 1 });
-            importChainText(decodeAozoraText(files[tn]), f.name, {
+            const txts = decodeAozoraText(files[tn]);
+            // 青空形式の先頭行は作品名 — 文書タイトルへ（無ければ
+            // importChainText 側でファイル名へ畳む）
+            const ttl = txts
+              .split('\n')
+              .map((l) => l.trim())
+              .find((l) => l !== '');
+            importChainText(txts, f.name, {
               spec: {
                 ...model.spec,
                 size: 'SHIROKU',
                 landscape: false,
               },
               genko: { cells: 43, cols: 17, columns: 1 },
-            });
+            }, ttl);
           });
         }}
       />
