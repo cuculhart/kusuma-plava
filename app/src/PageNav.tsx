@@ -12,7 +12,6 @@ export function PageNav({
   collapsed,
   onToggle,
   onGo,
-  chapters,
   t,
 }: {
   /** 表示中ページ（0-based index。-1 なら gap/圏外） */
@@ -22,8 +21,6 @@ export function PageNav({
   onToggle: () => void;
   /** 0-based index へ移動 */
   onGo: (index: number) => void;
-  /** v0.11: 章一覧（章名→開始頁）— 選択でその章の先頭頁へジャンプ */
-  chapters?: { name: string; page: number }[];
   t: TFunc;
 }) {
   const [jump, setJump] = useState('');
@@ -43,30 +40,6 @@ export function PageNav({
   }
   return (
     <div className="page-nav">
-      {/* v0.11: 章ジャンプ — 章名を選ぶとその章の先頭頁へ。
-          欄外の柱クリックは頁クリック送りと競合するため
-          ここへ集約（選択肢は章名、移動先は開始頁） */}
-      {chapters && chapters.length > 0 && (
-        <select
-          className="pn-chap"
-          value=""
-          title={t('nav.chapter')}
-          onChange={(e) => {
-            const i = +e.currentTarget.value;
-            if (i >= 0 && i < chapters.length) go(chapters[i].page);
-            e.currentTarget.value = '';
-          }}
-        >
-          <option value="" disabled>
-            {t('nav.chapterPh')}
-          </option>
-          {chapters.map((ch, i) => (
-            <option key={i} value={i}>
-              {ch.name}
-            </option>
-          ))}
-        </select>
-      )}
       {/* ページは右→左に続くため、左向きのボタンが後方（次・最終） */}
       <button onClick={() => go(total - 1)} title={t('nav.last')}>
         ≪

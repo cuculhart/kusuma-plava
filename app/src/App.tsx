@@ -557,11 +557,11 @@ export function App() {
   // （ダークテーマでは暗い紙＋明るい文字の組合せにする）
   const [paperColor, setPaperColor] = useState('#ffffff');
   const [footer, setFooter] = useState(false);
-  // v0.11: 右側メニュー — 頁ナビと文書設定を右端レールの
+  // v0.11: 右側メニュー — 頁ナビ・章・文書設定を右端レールの
   // フロートパネルへ折りたためる（入力欄を広く使うため）
-  const [sidePanel, setSidePanel] = useState<'nav' | 'doc' | null>(
-    'nav',
-  );
+  const [sidePanel, setSidePanel] = useState<
+    'nav' | 'chap' | 'doc' | null
+  >('nav');
   const [activePage, setActivePage] = useState(0);
   const [shapeTool, setShapeTool] = useState<ShapeTool | null>(null);
   const [shapeDrag, setShapeDrag] = useState<{
@@ -4693,6 +4693,17 @@ export function App() {
             >
               頁
             </button>
+            {chapterNav.length > 0 && (
+              <button
+                className={sidePanel === 'chap' ? 'active' : ''}
+                title={t('side.chap')}
+                onClick={() =>
+                  setSidePanel((p) => (p === 'chap' ? null : 'chap'))
+                }
+              >
+                章
+              </button>
+            )}
             <button
               className={sidePanel === 'doc' ? 'active' : ''}
               title={t('side.doc')}
@@ -4710,9 +4721,34 @@ export function App() {
               collapsed={false}
               onToggle={() => setSidePanel(null)}
               onGo={goToPage}
-              chapters={chapterNav}
               t={t}
             />
+          )}
+          {sidePanel === 'chap' && chapterNav.length > 0 && (
+            <div className="side-panel chap">
+              <div className="sp-head">
+                <span>{t('side.chap')}</span>
+                <button
+                  title={t('chain.close')}
+                  onClick={() => setSidePanel(null)}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="sp-body">
+                {chapterNav.map((ch, i) => (
+                  <button
+                    key={i}
+                    className="sp-chap"
+                    title={t('nav.chapter')}
+                    onClick={() => goToPage(ch.page)}
+                  >
+                    <span className="sp-chap-name">{ch.name}</span>
+                    <span className="sp-chap-p">p.{ch.page + 1}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
           {sidePanel === 'doc' && (
             <div className="side-panel doc">

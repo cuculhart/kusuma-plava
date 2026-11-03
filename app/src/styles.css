@@ -1287,12 +1287,11 @@ body,
   background: var(--accent, #666);
   color: #fff;
 }
-.side-panel.doc {
+.side-panel {
   position: absolute;
   right: 44px;
   top: 10%;
   bottom: 10%;
-  width: 300px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1301,6 +1300,9 @@ body,
   flex-direction: column;
   z-index: 9;
   overflow: hidden;
+}
+.side-panel.doc {
+  width: 300px;
 }
 .side-panel .sp-head {
   display: flex;
@@ -1323,6 +1325,43 @@ body,
   overflow: auto;
   padding: 8px;
   font-size: 13px;
+}
+
+/* 章パネル — 章名と開始頁の一覧ボタン */
+.side-panel.chap {
+  width: 240px;
+}
+.side-panel.chap .sp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.side-panel .sp-chap {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg, transparent);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.side-panel .sp-chap:hover {
+  border-color: var(--accent, #888);
+}
+.sp-chap-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-chap-p {
+  color: var(--muted, #888);
+  font-size: 11px;
+  flex-shrink: 0;
 }
 
 .page-nav.collapsed {
