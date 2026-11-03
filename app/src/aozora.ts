@@ -10,6 +10,17 @@
 //   - ［＃○字下げ］（行頭）          → 全角スペース○字へ置換
 //   - ［＃ここから○字下げ］…［＃ここで字下げ終わり］
 //                                   → ブロック内各行頭に全角スペース○字
+//   - ［＃ここから○字下げ、折り返して●字下げ］
+//     ［＃ここから改行天付き、折り返して○字下げ］
+//     ［＃ここから折り返して○字下げ］（省略形）
+//                                   → 改行行頭は全角スペース、折返し
+//     （継続）行は hangIndent mark で組版へ伝える（v0.12）
+//   - ［＃地付き］/［＃地から○字上げ］（行頭・行中）と
+//     ［＃ここから地付き］/［＃ここから地から○字上げ］（ブロック）
+//                                   → bottomLift mark で組版へ伝える。
+//     行中の注記は残りを別行へ分断（v0.12）
+//   - ［＃天付き］・［＃ここから天付き］…［＃ここで天付き終わり］
+//                                   → 既定動作なので受け付けるだけ
 //   - ［＃説明（file、横○×縦○）入る］ → images[] へ記録（v0.9。
 //     サイズ省略の旧式 `（file）入る` も同じ。text からは除去し
 //     位置だけ残す — 画像実体は txt に含まれないため呼び出し側が
@@ -69,6 +80,27 @@ const FW_CAPTION = /^「(.+)」はキャプション$/;
 const LINE_INDENT = /^［＃([０-９0-9]+)字下げ］/;
 const BLOCK_OPEN = /^［＃ここから([０-９0-9]+)字下げ］$/;
 const BLOCK_CLOSE = /^［＃ここで字下げ終わり］$/;
+// 凹凸字下げ（v0.12 — layout_2#jisage_kakushu）— 改行行頭と折返し行で
+// 字下げ量が違うブロック。正式形は
+//   ［＃ここから○字下げ、折り返して●字下げ］
+//   ［＃ここから改行天付き、折り返して○字下げ］
+// で、折返し側は「何字分下げるか」の絶対指定。計画の
+// ［＃ここから折り返して○字下げ］ は改行天付き形の省略形として
+// 受け付ける。m[1]=改行行頭字下げ（省略=0）、m[2]=折返し字下げ
+const BLOCK_OPEN_HANG =
+  /^［＃ここから(?:([０-９0-9]+)字下げ、|(?:改行)?天付き、)?折り返して([０-９0-9]+)字下げ］$/;
+// 地付き・地寄せブロック — ［＃ここから地付き］/［＃ここから地から○字
+// 上げ］ … ［＃ここで地付き終わり］/［＃ここで字上げ終わり］
+const CHI_BLOCK_OPEN = /^［＃ここから地付き］$/;
+const CHIAGE_BLOCK_OPEN = /^［＃ここから地から([０-９0-9]+)字上げ］$/;
+const CHI_BLOCK_CLOSE = /^［＃ここで(?:地付き|字上げ)終わり］$/;
+// 天付きブロック — 既定動作なので受け付けるだけ（明示指定で意味を
+// 持つのは地付き等との併記時）
+const TEN_BLOCK_OPEN = /^［＃ここから天付き］$/;
+const TEN_BLOCK_CLOSE = /^［＃ここで天付き終わり］$/;
+// 行内の地付き・地寄せ — ［＃地付き］/［＃地から○字上げ］。行頭なら
+// その行、行中なら残りを別行へ分けて下端揃えにする
+const LINE_CHIAGE = /^地から([０-９0-9]+)字上げ$/;
 const CAP_BLOCK_OPEN = /^［＃ここからキャプション］$/;
 const CAP_BLOCK_CLOSE = /^［＃ここでキャプション終わり］$/;
 // 画像注記 — `説明（…）入る`。括弧内は ファイル名 or
@@ -133,6 +165,28 @@ export function parseAozora(
   const outLines: string[] = [];
   let indent = 0; // ブロック字下げ中の字下げ幅
   let capS: number | null = null; // 開始注記待ちのキャプション開始位置
+  // v0.12: 折り返し字下げ — 継続行の字下げはパース時点で折返し位置が
+  // 分からないため marks（hangIndent）で組版へ伝える。改行行頭側は
+  // 従来どおり全角スペース挿入で処理する
+  let hang = 0; // 凹凸字下げブロックの継続行（折返し）字下げ幅
+  let hangS: number | null = null; // ブロック開始位置（変換後座標）
+  // 地付き・地寄せブロック — 範囲を bottomLift mark で組版へ伝える
+  let chiLift = 0; // ブロックの「地からの上げ幅」（0=地付き）
+  let chiS: number | null = null;
+  // 行内の ［＃地付き］/［＃地から○字上げ］ — 対象は注記から行末
+  // までなので、行を畳む時点で範囲を確定する
+  let lineChi: { s: number; lift: number } | null = null;
+  const closeHang = () => {
+    if (hangS != null && hang > 0 && offset > hangS)
+      marks.push({ start: hangS, end: offset, attrs: { hangIndent: hang } });
+    hangS = null;
+    hang = 0;
+  };
+  const closeChi = () => {
+    if (chiS != null && offset > chiS)
+      marks.push({ start: chiS, end: offset, attrs: { bottomLift: chiLift } });
+    chiS = null;
+  };
   let pendingBreak = false; // 改ブレイク注記直後 — 続く空行を畳む
   let rawOff = 0; // 生テキストでの行頭位置
   let offset = 0; // 変換後テキストでの現在位置
@@ -199,6 +253,7 @@ export function parseAozora(
     // ブロック字下げ・複数行キャプションは行単位の注記行として現れる
     const bo = line.match(BLOCK_OPEN);
     if (bo) {
+      closeHang();
       indent = +fw(bo[1]);
       handled++;
       edits.push({
@@ -212,6 +267,65 @@ export function parseAozora(
     }
     if (BLOCK_CLOSE.test(line)) {
       indent = 0;
+      closeHang();
+      handled++;
+      edits.push({
+        rawS: lineRaw,
+        rawE: lineRaw + line.length,
+        parsedS: offset,
+        insLen: 0,
+      });
+      rawOff += line.length + 1;
+      continue;
+    }
+    // 凹凸字下げ（v0.12）— 改行行頭は indent（全角スペース挿入）、
+    // 折返し行は hang（marks 経由で組版が継続行へ適用）
+    const hb = line.match(BLOCK_OPEN_HANG);
+    if (hb) {
+      closeHang();
+      indent = hb[1] ? +fw(hb[1]) : 0;
+      hang = +fw(hb[2]);
+      hangS = offset;
+      handled++;
+      edits.push({
+        rawS: lineRaw,
+        rawE: lineRaw + line.length,
+        parsedS: offset,
+        insLen: 0,
+      });
+      rawOff += line.length + 1;
+      continue;
+    }
+    // 地付き・地寄せブロック — 範囲を bottomLift mark で組版へ伝える
+    const cbk = line.match(CHI_BLOCK_OPEN) ?? line.match(CHIAGE_BLOCK_OPEN);
+    if (cbk) {
+      closeChi();
+      chiLift = cbk[1] ? +fw(cbk[1]) : 0;
+      chiS = offset;
+      handled++;
+      edits.push({
+        rawS: lineRaw,
+        rawE: lineRaw + line.length,
+        parsedS: offset,
+        insLen: 0,
+      });
+      rawOff += line.length + 1;
+      continue;
+    }
+    if (CHI_BLOCK_CLOSE.test(line)) {
+      closeChi();
+      handled++;
+      edits.push({
+        rawS: lineRaw,
+        rawE: lineRaw + line.length,
+        parsedS: offset,
+        insLen: 0,
+      });
+      rawOff += line.length + 1;
+      continue;
+    }
+    // 天付きブロック — 既定動作（上端揃え）なので受け付けるだけ
+    if (TEN_BLOCK_OPEN.test(line) || TEN_BLOCK_CLOSE.test(line)) {
       handled++;
       edits.push({
         rawS: lineRaw,
@@ -321,6 +435,7 @@ export function parseAozora(
       const h = note.match(FW_HEADING);
       const cb = note.match(FW_CAPTION);
       const im = note.match(IMAGE_NOTE);
+      const chm = note.match(LINE_CHIAGE);
       if (b || h || cb) {
         const t = (b ?? h ?? cb)![1];
         if (out.endsWith(t)) {
@@ -396,6 +511,42 @@ export function parseAozora(
           parsedS: offset,
           insLen: 0,
         });
+      } else if (note === '地付き' || chm || note === '天付き') {
+        // v0.12: 行内の地付き・地寄せ・天付き — 対象は注記から行末。
+        // 行中なら残りを改行で分断して下端揃えの行にする（XHTML で
+        // <div class="chitsuki_N"> に分かれるのと同じ構造）。
+        // 注記以降に本文が無い・天付き（=既定）は mark 不要
+        const rest = body.slice(i).replace(/［＃[^］]*］/g, '');
+        if (note === '天付き' || rest.trim() === '') {
+          handled++;
+          edits.push({
+            rawS: lineRaw + at + shift,
+            rawE: lineRaw + at + m[0].length + shift,
+            parsedS: offset,
+            insLen: 0,
+          });
+        } else {
+          // 先行する pending mark があればこの注記の手前で確定する
+          if (lineChi && offset > lineChi.s)
+            marks.push({
+              start: lineChi.s,
+              end: offset,
+              attrs: { bottomLift: lineChi.lift },
+            });
+          const mid = out.trim() !== ''; // 行中の注記 → 残りを別行へ
+          if (mid) {
+            out += '\n';
+            offset += 1;
+          }
+          lineChi = { s: offset, lift: chm ? +fw(chm[1]) : 0 };
+          handled++;
+          edits.push({
+            rawS: lineRaw + at + shift,
+            rawE: lineRaw + at + m[0].length + shift,
+            parsedS: mid ? offset - 1 : offset,
+            insLen: mid ? 1 : 0,
+          });
+        }
       } else if (note === '') {
         out += m[0]; // ［＃］ 自体は説明文として残す
         offset += m[0].length;
@@ -410,6 +561,14 @@ export function parseAozora(
       }
     }
     emit(body.slice(i), lineRaw + i + shift);
+    // 行内の地付き・地寄せは行末で範囲を確定する（対象は注記〜行末）
+    if (lineChi && offset > lineChi.s)
+      marks.push({
+        start: lineChi.s,
+        end: offset,
+        attrs: { bottomLift: lineChi.lift },
+      });
+    lineChi = null;
     // 注記だけの行は除去後に空行として残ると \n が丸ごと1段を
     // 消費して空段が出る — 行ごと畳む（raw 位置は保つ）
     const noteOnly =
@@ -454,8 +613,12 @@ export function parseAozora(
   };
 
   const text = outLines.join('\n');
-  // 閉じられなかったキャプション開始は文書末までを範囲とみなす
+  // 閉じられなかった開始注記は文書末までを範囲とみなす
   if (capS != null)
     marks.push({ start: capS, end: text.length, attrs: { fontSize: captionFs } });
+  if (hangS != null && hang > 0)
+    marks.push({ start: hangS, end: text.length, attrs: { hangIndent: hang } });
+  if (chiS != null)
+    marks.push({ start: chiS, end: text.length, attrs: { bottomLift: chiLift } });
   return { text, marks, images, breaks, handled, dropped, toParsed, toRaw };
 }

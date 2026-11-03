@@ -31,6 +31,7 @@ import {
   unlinkAt,
   type AreaBox,
   type Chain,
+  type KinsokuMode,
   type LayoutResult,
   type PageModel,
   type PaperSize,
@@ -624,6 +625,10 @@ export function App() {
   // v0.10: 空行を畳む — 文書設定。ソースの空行（\n\n 連続）を組版から
   // 除く（青空本文の見栄え用空行の抑制。既定OFF = 1空行=1空段の仕様）
   const [collapseNl, setCollapseNl] = useState(false);
+  // v0.12: 禁則処理 — 文書設定。'oidashi'=分割点前倒し（既定・升目原稿
+  // 向き）/ 'burasage'=句読点を区間規定字に1字はみ出す（書籍組版向き）。
+  // doc.json の kinsoku へ保存（文書ごとに切替可）
+  const [kinsoku, setKinsoku] = useState<KinsokuMode>('oidashi');
   // v0.3: 目標字数 — アプリ設定（文書ではなく環境の好み）として
   // localStorage へ。正準値は字数（枚数入力は ×400 で畳み込む）
   const [goal, setGoal] = useState(
@@ -663,6 +668,7 @@ export function App() {
     hashira: string;
     margins: PageMargins;
     collapseNl: boolean;
+    kinsoku: KinsokuMode;
     goal: number;
   };
   const histRef = useRef<{ past: Snap[]; future: Snap[]; last: number }>({
@@ -1223,6 +1229,7 @@ export function App() {
     hashira,
     margins,
     collapseNl,
+    kinsoku,
     goal,
   });
   const applySnap = (s: Snap) => {
@@ -1274,6 +1281,7 @@ export function App() {
     setHashira(s.hashira);
     setMargins(s.margins);
     setCollapseNl(s.collapseNl);
+    setKinsoku(s.kinsoku);
     setGoal(s.goal);
     snapRef.current = s;
     applyingRef.current = false;
@@ -1314,7 +1322,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, goal]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, kinsoku, goal]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -1360,6 +1368,7 @@ export function App() {
           hashira: '',
           margins: { ...DEFAULT_MARGINS },
           collapseNl: false,
+          kinsoku: 'oidashi' as const,
           goal: 0,
         };
         const cur = {
@@ -1383,6 +1392,8 @@ export function App() {
           margins: r.margins,
           hashira: r.hashira,
           collapseNl: r.collapseNl,
+          kinsoku: r.kinsoku,
+          goal: r.goal,
         };
         if (JSON.stringify(blank) === JSON.stringify(cur)) return;
         applyArchive(r);
@@ -1426,6 +1437,7 @@ export function App() {
           hashira,
           margins,
           collapseNl,
+          kinsoku,
           goal,
         });
         const fp = docFp(createdAtRef.current, docTitle);
@@ -1439,7 +1451,7 @@ export function App() {
     }, 1500);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, goal]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, kinsoku, goal]);
 
   // v0.7: 執筆モードのホイール = ページめくり — ページビューア化で
   // 可変ズームと自由パンを廃止したため、ホイール送りは現ページ±1へ
@@ -1581,6 +1593,7 @@ export function App() {
     setHashira('');
     setMargins({ ...DEFAULT_MARGINS });
     setCollapseNl(false);
+    setKinsoku('oidashi');
     createdAtRef.current = new Date().toISOString();
     // v0.11: 文書が切り替わった時点で fp を更新 — 旧文書の
     // 下書きが残っていても次回起動で誤復元しない
@@ -1612,6 +1625,7 @@ export function App() {
       hashira,
       margins,
       collapseNl,
+      kinsoku,
       goal,
     });
     const a = document.createElement('a');
@@ -1705,6 +1719,7 @@ export function App() {
     setHashira(r.hashira);
     setMargins(r.margins ?? { ...DEFAULT_MARGINS });
     setCollapseNl(r.collapseNl === true);
+    setKinsoku(r.kinsoku);
     setGoal(r.goal);
     createdAtRef.current = r.createdAt || new Date().toISOString();
     // v0.11: 下書き fingerprint を開いた文書へ更新（下書き復元
@@ -2775,6 +2790,7 @@ export function App() {
           bold: d.bold,
           italic: d.italic,
           writing: d.writing,
+          kinsoku, // v0.12: 禁則処理（文書設定）を組版へ引き渡す
           ...(d.writing === 'vertical-rl'
             ? { obstacles: areaObstacles(engine, o) }
             : {}),
@@ -2857,6 +2873,10 @@ export function App() {
             ...b,
             marks,
             textOffset: sl.offset,
+            continuesPara: sl.offset > 0 && txt[sl.offset - 1] !== '\n',
+            continuesAfter:
+              sl.offset + sl.text.length < txt.length &&
+              txt[sl.offset + sl.text.length] !== '\n',
           });
           const units = Array.from(
             tokenizeVertical(sl.text, marks, sl.offset),
@@ -2958,19 +2978,21 @@ export function App() {
       layouts.set(c.id, lr);
       for (const sl of lr.slices) {
         const b = boxById.get(sl.areaId);
-        if (
-          b?.writing === 'vertical-rl' &&
-          // 障害のある段内分割か、話区切り（＊◇※だけの行 — sep 単位の
-          // 天地中央寄せは絶対配置が必要）を含むスライスは区間計画が要る
-          (b.obstacles?.length ||
-            /(?:^|\n)[＊◇※]+(?:\n|$)/.test(sl.text))
-        ) {
+        // v0.12: 縦書きスライスはすべて区間計画（vflow）で描く — CSS
+        // 折返しは禁則を知らず、追い出し/ぶら下げ・折返し字下げ・地付き
+        // のいずれも再現できない（障害・sep のための vflow を一般化）。
+        // 描画は計画の u0/u1 どおり絶対配置 — 計測と見た目が一致する
+        if (b?.writing === 'vertical-rl') {
           vflows.set(
             sl.areaId,
             layoutVertical(sl.text, {
               ...b,
-              marks: chainMarks(c),
+              marks,
               textOffset: sl.offset,
+              continuesPara: sl.offset > 0 && txt[sl.offset - 1] !== '\n',
+              continuesAfter:
+                sl.offset + sl.text.length < txt.length &&
+                txt[sl.offset + sl.text.length] !== '\n',
             }),
           );
         }
@@ -2978,7 +3000,7 @@ export function App() {
     }
     return { layouts, vflows, zones: zrec };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chains, engine.doc.objects, liveGeom, aozora]);
+  }, [chains, engine.doc.objects, liveGeom, aozora, kinsoku]);
 
   // ── v0.9: 画像注記 ↔ 空枠の同期 ──
   // 連鎖テキスト中の画像注記 `［＃説明（file、横○×縦○）入る］` に
@@ -4193,8 +4215,14 @@ export function App() {
                       key={i}
                       className="vseg"
                       style={{
-                        top: s.y * MM_PX * z,
-                        height: s.h * MM_PX * z,
+                        // v0.12: padTop（折返し字下げ・地付き/地寄せ）は
+                        // 区間を縮めて上側へ空きを作り、hang（ぶら下げ）は
+                        // 区間下端のはみ出しを clip しないよう延ばす
+                        top: (s.y + (s.padTop ?? 0)) * MM_PX * z,
+                        height:
+                          (s.h - (s.padTop ?? 0) + (s.hang ?? 0)) *
+                          MM_PX *
+                          z,
                         right: s.col * vflow.pitch * MM_PX * z,
                         width: vflow.pitch * MM_PX * z,
                       }}
@@ -4327,6 +4355,8 @@ export function App() {
     onMargins: applyMargins,
     collapseNl,
     onCollapseNl: setCollapseNl,
+    kinsoku,
+    onKinsoku: setKinsoku,
     hanmenCells,
     fit400fs: cellArea ? fit400fs : null,
     onFit400: fit400,

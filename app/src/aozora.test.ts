@@ -232,3 +232,120 @@ describe('parseAozora — キャプション注記（v0.9）', () => {
     ]);
   });
 });
+
+describe('parseAozora — 凹凸字下げ・地付き/地寄せ（v0.12）', () => {
+  it('ここから○字下げ、折り返して●字下げ: 行頭はスペース・折返しは mark', () => {
+    const r = parseAozora(
+      '前。\n［＃ここから２字下げ、折り返して３字下げ］\n去年\n一昨年\n［＃ここで字下げ終わり］\n後。',
+    );
+    expect(r.text).toBe('前。\n　　去年\n　　一昨年\n後。');
+    expect(r.marks).toEqual([
+      { start: 3, end: 14, attrs: { hangIndent: 3 } },
+    ]);
+    expect(r.handled).toBe(2);
+    expect(r.dropped).toBe(0);
+  });
+
+  it('ここから改行天付き、折り返して○字下げ: 行頭 indent なし', () => {
+    const r = parseAozora(
+      '［＃ここから改行天付き、折り返して１字下げ］\n一\n二\n［＃ここで字下げ終わり］',
+    );
+    expect(r.text).toBe('一\n二');
+    expect(r.marks).toEqual([
+      { start: 0, end: 4, attrs: { hangIndent: 1 } },
+    ]);
+    expect(r.handled).toBe(2);
+  });
+
+  it('ここから折り返して○字下げ（省略形）も同じく受理', () => {
+    const r = parseAozora(
+      '［＃ここから折り返して１字下げ］\nあ\n［＃ここで字下げ終わり］',
+    );
+    expect(r.text).toBe('あ');
+    // ブロック mark は閉じ注記の位置＝前行の改行まで含む
+    expect(r.marks).toEqual([
+      { start: 0, end: 2, attrs: { hangIndent: 1 } },
+    ]);
+    expect(r.handled).toBe(2);
+  });
+
+  it('凹凸ブロックの切替 — ［＃ここから○字下げ］で前の折返しを閉じる', () => {
+    const r = parseAozora(
+      '［＃ここから改行天付き、折り返して１字下げ］\nあ\n［＃ここから２字下げ］\nい\n［＃ここで字下げ終わり］',
+    );
+    expect(r.text).toBe('あ\n　　い');
+    expect(r.marks).toEqual([
+      { start: 0, end: 2, attrs: { hangIndent: 1 } },
+    ]);
+  });
+
+  it('［＃地付き］行頭: その行へ bottomLift 0 の mark', () => {
+    const r = parseAozora('前。\n［＃地付き］（この日記終り）');
+    expect(r.text).toBe('前。\n（この日記終り）');
+    expect(r.marks).toEqual([
+      { start: 3, end: 11, attrs: { bottomLift: 0 } },
+    ]);
+    expect(r.handled).toBe(1);
+  });
+
+  it('［＃地付き］行中: 残りを別行へ分断して下端揃え', () => {
+    const r = parseAozora(
+      '二人はそれぎり黙って風呂へはいった。［＃地付き］（掲載誌不詳）',
+    );
+    expect(r.text).toBe(
+      '二人はそれぎり黙って風呂へはいった。\n（掲載誌不詳）',
+    );
+    expect(r.marks).toEqual([
+      { start: 19, end: 26, attrs: { bottomLift: 0 } },
+    ]);
+    expect(r.handled).toBe(1);
+  });
+
+  it('［＃地から○字上げ］: 上げ幅を bottomLift へ', () => {
+    const r = parseAozora('［＃地から２字上げ］長谷川辰之助');
+    expect(r.text).toBe('長谷川辰之助');
+    expect(r.marks).toEqual([
+      { start: 0, end: 6, attrs: { bottomLift: 2 } },
+    ]);
+  });
+
+  it('ブロック地付き: ［＃ここから地付き］…［＃ここで地付き終わり］', () => {
+    const r = parseAozora(
+      '［＃ここから地付き］\nあ\nい\n［＃ここで地付き終わり］',
+    );
+    expect(r.text).toBe('あ\nい');
+    expect(r.marks).toEqual([
+      { start: 0, end: 4, attrs: { bottomLift: 0 } },
+    ]);
+    expect(r.handled).toBe(2);
+  });
+
+  it('ブロック地寄せ: ［＃ここから地から○字上げ］…［＃ここで字上げ終わり］', () => {
+    const r = parseAozora(
+      '［＃ここから地から１字上げ］\nあ\n［＃ここで字上げ終わり］',
+    );
+    expect(r.marks).toEqual([
+      { start: 0, end: 2, attrs: { bottomLift: 1 } },
+    ]);
+  });
+
+  it('天付きは既定扱いで受理（mark は付かない）', () => {
+    const r = parseAozora('［＃天付き］本文');
+    expect(r.text).toBe('本文');
+    expect(r.marks).toEqual([]);
+    expect(r.handled).toBe(1);
+    const b = parseAozora(
+      '［＃ここから天付き］\nあ\n［＃ここで天付き終わり］',
+    );
+    expect(b.text).toBe('あ');
+    expect(b.marks).toEqual([]);
+    expect(b.handled).toBe(2);
+  });
+
+  it('閉じない地付きブロックは文書末までを範囲とみなす', () => {
+    const r = parseAozora('［＃ここから地付き］\n末まで');
+    expect(r.marks).toEqual([
+      { start: 0, end: 3, attrs: { bottomLift: 0 } },
+    ]);
+  });
+});

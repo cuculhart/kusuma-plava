@@ -5,7 +5,7 @@
 
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import type { WorldObject } from '@kimetron/core';
-import type { Chain, PageModel } from 'inimbal';
+import type { Chain, KinsokuMode, PageModel } from 'inimbal';
 import {
   DEFAULT_GRID_COLOR,
   IMG_KIND,
@@ -87,6 +87,9 @@ interface ArchiveDoc {
   /** v0.11: 目標字数（0=未設定）。localStorage から文書へ移行 —
       doc ごとに持てるよう書庫へ保存 */
   goal?: number;
+  /** v0.12: 禁則処理 — 'oidashi'（既定・欠落）= 分割点前倒し /
+      'burasage' = 句読点を区間規定字に1字はみ出す（書籍組版向き） */
+  kinsoku?: KinsokuMode;
 }
 
 const EXT_OF_MIME: Record<string, string> = {
@@ -144,6 +147,7 @@ export function packArchive(input: {
   margins?: PageMargins;
   collapseNl?: boolean;
   goal?: number;
+  kinsoku?: KinsokuMode;
 }): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   let imgN = 0;
@@ -184,6 +188,8 @@ export function packArchive(input: {
     collapseNl: input.collapseNl || undefined,
     // 0 は書き出さない（欠落=未設定）
     goal: input.goal ? Math.round(input.goal) : undefined,
+    // 既定（追い出し）は書き出さない（欠落=oidashi）
+    kinsoku: input.kinsoku === 'burasage' ? 'burasage' : undefined,
   };
   files['doc.json'] = strToU8(JSON.stringify(doc));
   return zipSync(files);
@@ -219,6 +225,8 @@ export function unpackArchive(bytes: Uint8Array): {
   collapseNl: boolean;
   /** v0.11: 目標字数。欠落・不正値は 0（未設定） */
   goal: number;
+  /** v0.12: 禁則処理。欠落・不正値は 'oidashi'（追い出し） */
+  kinsoku: KinsokuMode;
 } {
   const files = unzipSync(bytes);
   const raw = files['doc.json'];
@@ -320,5 +328,6 @@ export function unpackArchive(bytes: Uint8Array): {
       typeof doc.goal === 'number' && doc.goal > 0
         ? Math.round(doc.goal)
         : 0,
+    kinsoku: doc.kinsoku === 'burasage' ? 'burasage' : 'oidashi',
   };
 }

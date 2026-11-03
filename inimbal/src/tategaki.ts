@@ -9,9 +9,13 @@
 //   - ルビ記法は不可分単位（ヨミは主線の進行幅に含めない）
 //   - 半角英数ランは ≤4字なら縦中横で1セル、それ以外は1字1セル
 //   - 禁則は境界調整のみ: 分割点で次単位が行頭禁則・現単位が行末禁則なら
-//     最大2単位前倒し（実務ルール — 計測ではなく境界ルール）
+//     最大2単位前倒し（実務ルール — 計測ではなく境界ルール）。
+//     v0.12: box.kinsoku='burasage' なら句読点類を区間規定字へ1字
+//     はみ出して配置する（ぶら下げ — VSeg.hang で描画へ伝える）
 //   - box.obstacles = 回しこみ障害（エリアローカル mm）— 交差する段は
 //     縦範囲をセル境界へスナップして除き、上下両区間へ配分（段内分割）
+//   - v0.12: 段落レベル属性 marks（hangIndent=折り返し字下げ・
+//     bottomLift=地付き/地寄せ）を区間計画へ反映（VSeg.padTop）
 
 import type { AreaBox, TextMark } from './chain';
 
@@ -267,6 +271,14 @@ export const isHeadKinsoku = (ch: string) => HEAD_KINSOKU.has(ch);
 /** 段末に来られない字か（行末禁則） */
 export const isEndKinsoku = (ch: string) => END_KINSOKU.has(ch);
 
+// v0.12: ぶら下げ対象（kinsoku='burasage'）— 区間規定字へ1字はみ出して
+// 置ける行頭禁則字を句読点類に限定する（閉じ括弧等は対象外 — 追い出し側
+// の前倒しで処理する。原則1字まで）
+const HANG_KINSOKU = new Set([...'。、．，｡､']);
+
+/** 段頭に来られない字か（行頭禁則） */
+export const isHangKinsoku = (ch: string) => HANG_KINSOKU.has(ch);
+
 /** 縦版レイアウトの配置区間 — 1段内の自由区間と、そこへ割り当てた
     組版単位の範囲（回しこみの段内分割で1段が複数区間を持ち得る）。 */
 export interface VSeg {
@@ -279,6 +291,14 @@ export interface VSeg {
   /** この区間へ入る組版単位の範囲 — tokenizeVertical(text) の [u0, u1) */
   u0: number;
   u1: number;
+  /** 区間上端からの追加空き（mm）— 折り返し字下げ（継続行の行頭
+      字下げ）と地付き・地寄せ（段落末行の下端揃え）で単位群を下へ
+      ずらす。折り返し字下げは区間の収容高から控除済み */
+  padTop?: number;
+  /** 区間下端からのはみ出し（mm）— ぶら下げ禁則で区間規定字を
+      超えて配置した句読点ぶん。描画は区間をこの分だけ延ばして
+      clip しないようにする */
+  hang?: number;
 }
 
 /** layoutVertical() の返り値 — 段×区間への単位割当計画（案B: fit が
@@ -337,6 +357,36 @@ export function layoutVertical(text: string, box: AreaBox): VFlow {
     return fs;
   };
 
+  // v0.12: 段落レベルの組版属性マーク — 折り返し字下げ（hangIndent）
+  // と地付き/地寄せ（bottomLift）。fontSize と同じ規約で chain 座標を
+  // textOffset でローカル化・後勝ち
+  const paraMark = (attr: 'hangIndent' | 'bottomLift') =>
+    (box.marks ?? [])
+      .filter(
+        (m) =>
+          m.attrs[attr] !== undefined &&
+          m.end > off &&
+          m.start < off + text.length,
+      )
+      .map((m) => ({
+        s: Math.max(0, m.start - off),
+        e: Math.min(text.length, m.end - off),
+        n: m.attrs[attr]!,
+      }));
+  const hiMarks = paraMark('hangIndent');
+  const blMarks = paraMark('bottomLift');
+  const hangIndentAt = (p: number) => {
+    let n = 0;
+    for (const m of hiMarks) if (m.s <= p && p < m.e) n = m.n;
+    return n;
+  };
+  const bottomLiftAt = (p: number) => {
+    let n: number | undefined;
+    for (const m of blMarks) if (m.s <= p && p < m.e) n = m.n;
+    return n;
+  };
+  const burasage = box.kinsoku === 'burasage';
+
   // 単位は装飾ランにまたがって切らない（ルビの記法がラン境界で
   // 壊れないよう描画側と同じ分割を使う）。箱が満たされた時点で
   // 打ち切れるよう遅延トークン化する — fit が残り全文をスキャン
@@ -384,11 +434,26 @@ export function layoutVertical(text: string, box: AreaBox): VFlow {
 
   let u = 0;
   for (let col = 0; col < cols && unitAt(u); col++) {
+    const colU = u; // この段の先頭単位（折り返し字下げ判定は段頭のみ）
     for (const seg of freeIntervals(col)) {
       if (!unitAt(u)) break;
       const u0 = u; // 現区間の先頭単位 index（禁則の前倒し範囲）
+      // v0.12: 折り返し字下げ — 段の先頭区間が段落の継続行なら行頭を
+      // hangIndent 字ぶん下げる。障害で分かれた後続区間は同じ行の
+      // 続きなので対象外（行頭 indent は段頭の1回だけ）
+      let padTop = 0;
+      if (u === colU) {
+        const cont =
+          (u0 > 0 && units[u0 - 1].kind !== 'brk') ||
+          (u0 === 0 && !!box.continuesPara);
+        if (cont) padTop = hangIndentAt(unitAt(u0)!.start) * baseFs;
+      }
       let used = 0;
       let colBrk = false; // brk = 段送り → この段の残り区間は使わない
+      let overhang = 0; // ぶら下げではみ出した単位ぶんの高さ（mm）
+      // ぶら下げは自由区間が段下端まで届く区間だけに許す — 障害との
+      // 境界（段の途中）では句読点をはみ出さない
+      const canHang = burasage && seg.y + seg.h >= cap - 1e-9;
       while (unitAt(u)) {
         const un = unitAt(u)!;
         if (un.kind === 'brk') {
@@ -398,7 +463,7 @@ export function layoutVertical(text: string, box: AreaBox): VFlow {
           break;
         }
         const h = unitH(un);
-        if (used + h <= seg.h + 1e-9) {
+        if (used + h <= seg.h - padTop + 1e-9) {
           used += h;
           u++;
           continue;
@@ -406,6 +471,19 @@ export function layoutVertical(text: string, box: AreaBox): VFlow {
         if (used === 0) {
           // 空区間にも収まらない単位（巨大字等）は強制配置して区間を進める
           u++;
+        } else if (
+          canHang &&
+          un.cells === 1 &&
+          isHangKinsoku(un.text[0]) &&
+          padTop + used + h <= seg.h + baseFs + 1e-9
+        ) {
+          // v0.12: ぶら下げ — 句読点類を区間規定字に1字はみ出して配置
+          // （升目の外＝段下端の余白側へ出す）。はみ出しは原則1字まで:
+          // 直後の単位が禁則字なら下の前倒しへ落ちて連なって送られる
+          used += h;
+          overhang += h;
+          u++;
+          continue;
         } else {
           // 区間が満杯 → 禁則の境界調整。次単位が行頭禁則または現単位が
           // 行末禁則なら、境界を最大2単位前倒しして次区間へ送る
@@ -421,11 +499,44 @@ export function layoutVertical(text: string, box: AreaBox): VFlow {
             pull++;
           }
           u -= pull;
+          // 前倒しで境界が戻ったらはみ出し句読点も次区間へ連れて行く
+          if (pull > 0) overhang = 0;
         }
         break;
       }
       const u1 = u - (colBrk ? 1 : 0);
-      if (u1 > u0) flow.segs.push({ col, y: seg.y, h: seg.h, u0, u1 });
+      if (u1 > u0) {
+        let contentH = 0;
+        for (let k = u0; k < u1; k++) contentH += unitH(units[k]);
+        // v0.12: 地付き・地寄せ — 段落の末行を区間下端へ揃え、lift 字ぶん
+        // 上げる（段落の終端単位を持つ区間のみ。text 末端の区切れは
+        // box.continuesAfter で段落継続とみなして対象外にする）
+        const nxt = unitAt(u1);
+        const paraEnd =
+          nxt?.kind === 'brk' || (nxt === undefined && !box.continuesAfter);
+        if (paraEnd) {
+          const lift = bottomLiftAt(units[u1 - 1].start);
+          if (lift !== undefined) {
+            const shift = seg.h - contentH - lift * baseFs;
+            if (shift > padTop) padTop = shift;
+          }
+        }
+        // ぶら下げではみ出た高さ（実際の区間はみ出し量で頭打ち —
+        // 地付きで padTop が伸びたら実はみ出しは縮む）
+        const hang = Math.min(
+          overhang,
+          Math.max(0, padTop + contentH - seg.h),
+        );
+        flow.segs.push({
+          col,
+          y: seg.y,
+          h: seg.h,
+          u0,
+          u1,
+          ...(padTop > 1e-9 ? { padTop } : {}),
+          ...(hang > 1e-9 ? { hang } : {}),
+        });
+      }
       if (colBrk) break;
     }
   }

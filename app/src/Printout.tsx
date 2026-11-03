@@ -358,9 +358,12 @@ export function Printout({
                               style={{
                                 // .parea は position:absolute — 絶対配置の
                                 // 基準は padding box なので内側余白ぶん
-                                // TEXT_PAD を足して内容箱ローカルへ揃える
-                                top: `${TEXT_PAD_MM + s.y}mm`,
-                                height: `${s.h}mm`,
+                                // TEXT_PAD を足して内容箱ローカルへ揃える。
+                                // v0.12: padTop（折返し字下げ・地付き）は
+                                // 区間を縮め、hang（ぶら下げ）は下端の
+                                // はみ出しを clip しないよう延ばす
+                                top: `${TEXT_PAD_MM + s.y + (s.padTop ?? 0)}mm`,
+                                height: `${s.h - (s.padTop ?? 0) + (s.hang ?? 0)}mm`,
                                 right: `${TEXT_PAD_MM + s.col * vflow.pitch}mm`,
                                 width: `${vflow.pitch}mm`,
                               }}

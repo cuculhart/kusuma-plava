@@ -301,6 +301,126 @@ describe('layoutVertical — 回しこみ（障害物と段内分割）', () => 
   });
 });
 
+describe('v0.12 — 段落属性（折返し字下げ・地付き/地寄せ）', () => {
+  // fs=4mm → pitch 6.4mm × 2段、cap 10セル（40mm）
+  const two = () => box(12.8, 40);
+
+  it('hangIndent: 段落継続行の先頭区間へ padTop（字ぶん）を立てる', () => {
+    const marks: TextMark[] = [
+      { start: 0, end: 30, attrs: { hangIndent: 2 } },
+    ];
+    const b = { ...two(), marks };
+    const f = layoutVertical('あ'.repeat(15), b);
+    // col0 は段落先頭行（padTop なし）、col1 は継続行 → 2字=8mm
+    expect(f.segs[0]).toMatchObject({ col: 0, u0: 0, u1: 10 });
+    expect(f.segs[0].padTop).toBeUndefined();
+    expect(f.segs[1]).toMatchObject({ col: 1, u0: 10, u1: 15, padTop: 8 });
+    // fit にも効く — col1 の収容は 10-2=8 字
+    expect(fitVertical('あ'.repeat(20), b)).toBe(18);
+  });
+
+  it('段落先頭行（直前が brk）は padTop なし', () => {
+    const marks: TextMark[] = [
+      { start: 0, end: 30, attrs: { hangIndent: 2 } },
+    ];
+    const f = layoutVertical(
+      'あああ\nいいいいいいいいいいいい',
+      { ...two(), marks },
+    );
+    // col1 は新しい段落の先頭行 — 継続行ではないので padTop なし
+    expect(f.segs[1].padTop).toBeUndefined();
+    expect(f.segs[1]).toMatchObject({ col: 1, u0: 4, u1: 14 });
+  });
+
+  it('continuesPara: エリア境界を跨ぐ段落継続も字下げ対象', () => {
+    const marks: TextMark[] = [
+      { start: 0, end: 10, attrs: { hangIndent: 2 } },
+    ];
+    const b = { ...box(6.4, 40), marks, continuesPara: true };
+    const f = layoutVertical('あ'.repeat(5), b);
+    expect(f.segs[0].padTop).toBe(8);
+    // フラグなし（段落先頭）なら padTop なし
+    const f0 = layoutVertical('あ'.repeat(5), {
+      ...box(6.4, 40),
+      marks,
+    });
+    expect(f0.segs[0].padTop).toBeUndefined();
+  });
+
+  it('bottomLift: 段落末区間を下端揃えにする（padTop=残り-lift）', () => {
+    const marks: TextMark[] = [
+      { start: 0, end: 3, attrs: { bottomLift: 0 } },
+    ];
+    const f = layoutVertical('あああ', { ...box(6.4, 40), marks });
+    // 3字=12mm を下端揃え → 上空き 40-12-0 = 28mm
+    expect(f.segs[0].padTop).toBe(28);
+    // 地から2字上げ → 40-12-8 = 20mm
+    const f2 = layoutVertical('あああ', {
+      ...box(6.4, 40),
+      marks: [{ start: 0, end: 3, attrs: { bottomLift: 2 } }],
+    });
+    expect(f2.segs[0].padTop).toBe(20);
+  });
+
+  it('continuesAfter: 段落が次エリアへ続くなら下端揃えしない', () => {
+    const marks: TextMark[] = [
+      { start: 0, end: 3, attrs: { bottomLift: 0 } },
+    ];
+    const f = layoutVertical('あああ', {
+      ...box(6.4, 40),
+      marks,
+      continuesAfter: true,
+    });
+    expect(f.segs[0].padTop).toBeUndefined();
+  });
+});
+
+describe('v0.12 — ぶら下げ禁則（kinsoku=burasage）', () => {
+  // cap 5セル（20mm）× 2段
+  const two = (kinsoku?: 'oidashi' | 'burasage') => ({
+    ...box(12.8, 20),
+    ...(kinsoku ? { kinsoku } : {}),
+  });
+
+  it('句読点は区間規定字に1字はみ出して配置（hang=1セル）', () => {
+    const f = layoutVertical('あいうえお。かき', two('burasage'));
+    // col0 は「あいうえお」+はみ出し「。」、col1 に「かき」
+    expect(f.segs).toEqual([
+      { col: 0, y: 0, h: 20, u0: 0, u1: 6, hang: 4 },
+      { col: 1, y: 0, h: 20, u0: 6, u1: 8 },
+    ]);
+    expect(f.chars).toBe(8);
+    // 既定（追い出し）は「お。」を次段へ送る — col0 は4単位
+    const f0 = layoutVertical('あいうえお。かき', two());
+    expect(f0.segs[0].u1).toBe(4);
+  });
+
+  it('句読点類以外の行頭禁則はぶら下げない（前倒しのまま）', () => {
+    // 「っ」は行頭禁則だが句読点類ではない → 従来どおり前倒し
+    expect(fitVertical('あいうえおっかきく', two('burasage'))).toBe(9);
+  });
+
+  it('障害との境界（段の途中）ではぶら下げない', () => {
+    const b = {
+      ...box(6.4, 40),
+      obstacles: [{ x: 0, y: 12, w: 6.4, h: 12 }],
+      kinsoku: 'burasage' as const,
+    };
+    // 上区間 [0,12)=3c は段下端でない → 「。」は前倒しで下区間へ
+    const f = layoutVertical('あああ。いい', b);
+    expect(f.segs).toEqual([
+      { col: 0, y: 0, h: 12, u0: 0, u1: 2 },
+      { col: 0, y: 24, h: 16, u0: 2, u1: 6 },
+    ]);
+    expect(f.chars).toBe(6);
+  });
+
+  it('段落末の句読点もぶら下げられる（直後が brk でも残る）', () => {
+    const f = layoutVertical('あいうえお。\nい', two('burasage'));
+    expect(f.segs[0]).toMatchObject({ col: 0, u0: 0, u1: 6, hang: 4 });
+  });
+});
+
 describe('禁則テーブル', () => {
   it('行頭禁則: 句読点・閉じ括弧・繰返し・半角記号', () => {
     for (const ch of '。、・！？)]」』〜々ー…') {

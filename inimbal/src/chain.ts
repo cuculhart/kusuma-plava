@@ -9,6 +9,11 @@
 /** 組方向。省略時は 'horizontal' 扱い（旧アーカイブとの後方互換） */
 export type WritingMode = 'horizontal' | 'vertical-rl';
 
+/** 禁則処理 — 'oidashi'（既定: 区間境界の前倒しで行頭禁則字を次区間へ
+    送る）/ 'burasage'（句読点類を区間末尾へ1字はみ出して配置 — 書籍組版
+    向き。升目原稿では升目をはみ出すため非推奨） */
+export type KinsokuMode = 'oidashi' | 'burasage';
+
 /** エリアの内寸（表示域）+ タイポグラフィ。
     width/height/fontSize の単位は呼び出し側と計測側で
     揃えておく（本アプリでは mm） */
@@ -32,6 +37,16 @@ export interface AreaBox {
   marks?: TextMark[];
   /** 渡した text の chain.text 内開始位置 — layoutChain が設定 */
   textOffset?: number;
+  /** 禁則処理（欠落='oidashi' — 従来の前倒し） */
+  kinsoku?: KinsokuMode;
+  /** 直前のエリアから段落が続いている — layoutChain が連鎖配分時に
+      設定（折り返し字下げの継続行判定用。部分スライスの描画用組版
+      では呼び出し側が設定） */
+  continuesPara?: boolean;
+  /** この text の末尾以降に同一段落が続き得る — 部分スライスの
+      描画用組版で設定（段落末の地付き判定を次エリアへ逃がすため。
+      連鎖 fit では text に残り全文が渡るため不要） */
+  continuesAfter?: boolean;
 }
 
 /** テキスト計測の注入インターフェース */
@@ -85,6 +100,9 @@ export function layoutChain(
       ...b,
       marks,
       textOffset: consumed,
+      // 直前スライスが改行で終わっていなければ段落継続 — 折り返し
+      // 字下げブロック内ではこのスライスの先頭行は継続行（v0.12）
+      continuesPara: consumed > 0 && text[consumed - 1] !== '\n',
     });
     // ブレイク位置がスライス内にあればそこで打ち切る — 境界上
     // （pos === consumed）は既に新エリアの頭なので素通し
@@ -117,6 +135,15 @@ export interface TextAttrs {
       このマークへ変換される（親字範囲 = マーク範囲）。記法の
       描画時解釈は marks が無い経路のフォールバックとして残る */
   ruby?: string;
+  /** v0.12: 折り返し字下げ（字）— 段落の継続行（折返し行）の行頭を
+      この字数ぶん下げる（青空注記「ここから○字下げ、折り返して●字
+      下げ」「ここから改行天付き、折り返して○字下げ」由来）。
+      段落レベルの組版属性 — 描画ラン（styleOf）へは出ない */
+  hangIndent?: number;
+  /** v0.12: 地付き・地寄せ（字）— 段落の末行を行下端へ揃え、地から
+      この字数ぶん上げる（0=地付き。青空注記「地付き」「地から○字
+      上げ」由来。段落レベルの組版属性） */
+  bottomLift?: number;
 }
 
 /** chain.text の [start,end) に効く書式マーク。後勝ち（属性単位の上書き） */

@@ -187,6 +187,11 @@ const ja = {
   'doc.collapseNl': '空行を畳む',
   'doc.collapseNlTip':
     'ソースの空行（改行2連続以上）を組版から除きます — 青空文庫本文の見栄え用空行を抑制（改丁/改ページ注記の周辺は常に畳みます）',
+  'doc.kinsoku': '禁則処理',
+  'doc.kinsoku.oi': '追い出し',
+  'doc.kinsoku.hang': 'ぶら下げ',
+  'doc.kinsokuTip':
+    '段末の禁則処理の選び方 — 追い出し: 句読点などを次の段頭へ送って升目に収める（升目原稿向き）/ ぶら下げ: 句読点を段の規定字に1字はみ出して段末を揃える（書籍組版向き）',
   'chain.outline': '話区切り・見出し',
   'doc.opacity': '用紙の透過',
   'doc.hint': '未選択 / 複数選択 — オブジェクトを選ぶとプロパティが出ます',
@@ -453,6 +458,11 @@ const en: Record<keyof typeof ja, string> = {
   'doc.collapseNl': 'Collapse blank lines',
   'doc.collapseNlTip':
     'Drop blank lines (2+ consecutive newlines) from the layout — suppresses decorative blank lines in aozora texts (lines around page-break notes are always folded)',
+  'doc.kinsoku': 'Line-break rules',
+  'doc.kinsoku.oi': 'Push-out (oidashi)',
+  'doc.kinsoku.hang': 'Hanging (burasage)',
+  'doc.kinsokuTip':
+    'Kinsoku handling at column ends — push-out sends punctuation to the next column to stay inside the grid (manuscript style); hanging lets punctuation overhang the column edge by one char for even column ends (book style)',
   'chain.outline': 'Scene breaks & headings',
   'doc.opacity': 'Paper opacity',
   'doc.hint': 'Nothing / multiple selected — select an object for properties',

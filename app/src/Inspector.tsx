@@ -9,7 +9,12 @@ import {
   type WorldObject,
   type ZOrder,
 } from '@kimetron/core';
-import type { Chain, PaperSize, TextAttrs } from 'inimbal';
+import type {
+  Chain,
+  KinsokuMode,
+  PaperSize,
+  TextAttrs,
+} from 'inimbal';
 import type { TFunc } from './i18n';
 import { tf } from './i18n';
 import { ChainPane } from './ChainPane';
@@ -301,6 +306,9 @@ export function RightDock({
     /** v0.10: 空行を畳む（\n\n 連続を組版から除く） */
     collapseNl: boolean;
     onCollapseNl: (on: boolean) => void;
+    /** v0.12: 禁則処理 — 追い出し（既定）/ ぶら下げ */
+    kinsoku: KinsokuMode;
+    onKinsoku: (k: KinsokuMode) => void;
     /** v0.5: 枠と字サイズを文書設定の升目仕様に合わせる */
     onFit400: () => void;
   };
@@ -861,6 +869,8 @@ export function DocProps({
   onMargins,
   collapseNl,
   onCollapseNl,
+  kinsoku,
+  onKinsoku,
   hanmenCells,
   fit400fs,
   onFit400,
@@ -905,6 +915,8 @@ export function DocProps({
   onMargins: (m: PageMargins) => void;
   collapseNl: boolean;
   onCollapseNl: (on: boolean) => void;
+  kinsoku: KinsokuMode;
+  onKinsoku: (k: KinsokuMode) => void;
   hanmenCells: { v: number; h: number };
   fit400fs: number | null;
   onFit400: () => void;
@@ -1185,6 +1197,18 @@ export function DocProps({
             onChange={(e) => onCollapseNl(e.currentTarget.checked)}
           />
           {t('doc.collapseNl')}
+        </label>
+        {/* v0.12: 禁則処理 — 追い出し（分割点前倒し・升目原稿向き）/
+            ぶら下げ（句読点を区間規定字に1字はみ出す・書籍組版向き） */}
+        <label title={t('doc.kinsokuTip')}>
+          {t('doc.kinsoku')}
+          <select
+            value={kinsoku}
+            onChange={(e) => onKinsoku(e.currentTarget.value as KinsokuMode)}
+          >
+            <option value="oidashi">{t('doc.kinsoku.oi')}</option>
+            <option value="burasage">{t('doc.kinsoku.hang')}</option>
+          </select>
         </label>
         {/* v0.6: 升目線の色+透過 — キャンバス表示と印刷の両方へ適用 */}
         <div className="ins-row" title={t('doc.gridColorTip')}>

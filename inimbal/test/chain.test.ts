@@ -299,4 +299,41 @@ describe('部分装飾マーク', () => {
       { off: 3, len: 1 },
     ]);
   });
+
+  it('layoutChain: 段落継続フラグ continuesPara を計測へ渡す（v0.12）', () => {
+    const seen: boolean[] = [];
+    const m = {
+      fit: (t: string, b: { continuesPara?: boolean }) => {
+        seen.push(!!b.continuesPara);
+        return Math.min(t.length, 3);
+      },
+    };
+    // 前スライスが改行で終わらない → 段落継続
+    layoutChain(
+      'abcdefgh',
+      [
+        { id: 'a', width: 3, height: 1 },
+        { id: 'b', width: 3, height: 1 },
+      ],
+      m,
+    );
+    expect(seen).toEqual([false, true]);
+    // 前スライスが \n で終わる → 新段落（継続ではない）
+    const seen2: boolean[] = [];
+    const m2 = {
+      fit: (t: string, b: { continuesPara?: boolean }) => {
+        seen2.push(!!b.continuesPara);
+        return Math.min(t.length, 4);
+      },
+    };
+    layoutChain(
+      'abc\ndefg',
+      [
+        { id: 'a', width: 4, height: 1 },
+        { id: 'b', width: 4, height: 1 },
+      ],
+      m2,
+    );
+    expect(seen2).toEqual([false, false]);
+  });
 });
