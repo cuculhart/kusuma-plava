@@ -130,6 +130,10 @@ export interface TextAttrs {
   link?: string;
   /** 傍点（青空文庫注記由来 — 描画は一律「・」= sesame） */
   boten?: boolean;
+  /** v0.13: 傍線（青空文庫注記「…に傍線」系由来）— 縦組では字の
+      左側（ルビ欄と反対側）、横組では下線として描く。値は CSS
+      text-decoration-style と同名 */
+  bosen?: 'solid' | 'double' | 'dotted' | 'dashed' | 'wavy';
   /** ルビ（ヨミガナ文字列）。縦書きエリアで <ruby> として描く。
       v0.10: marks 駆動の正規経路 — 本文の ｜《》 記法はパース時に
       このマークへ変換される（親字範囲 = マーク範囲）。記法の

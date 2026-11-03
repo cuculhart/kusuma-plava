@@ -132,7 +132,9 @@ export function Printout({
                         height: `${o.h}mm`,
                       }}
                     >
-                      <span>{d.placeholder.alt || d.placeholder.file}</span>
+                      <span>
+                        {d.placeholder.alt || d.placeholder.file}
+                      </span>
                     </div>
                   );
                 return (
@@ -288,8 +290,12 @@ export function Printout({
                       color: a?.link ? '#1a56c4' : (a?.color ?? d.color),
                       fontWeight: a?.bold ? 'bold' : undefined,
                       fontStyle: a?.italic ? 'italic' : undefined,
-                      textDecoration:
-                        a?.underline || a?.link ? 'underline' : undefined,
+                      textDecoration: a?.bosen
+                        ? `underline ${a.bosen}`
+                        : a?.underline || a?.link
+                          ? 'underline'
+                          : undefined,
+                      textUnderlinePosition: a?.bosen ? 'right' : undefined,
                       textEmphasis: a?.boten ? 'sesame' : undefined,
                     },
                     boten: a?.boten,
@@ -387,8 +393,9 @@ export function Printout({
                               : (r.attrs.color ?? d.color),
                             fontWeight: r.attrs.bold ? 'bold' : undefined,
                             fontStyle: r.attrs.italic ? 'italic' : undefined,
-                            textDecoration:
-                              r.attrs.underline || r.attrs.link
+                            textDecoration: r.attrs.bosen
+                              ? `underline ${r.attrs.bosen}`
+                              : r.attrs.underline || r.attrs.link
                                 ? 'underline'
                                 : undefined,
                             textEmphasis: r.attrs.boten

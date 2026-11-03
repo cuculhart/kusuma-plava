@@ -422,7 +422,8 @@ function refitWritingAreas(
       const p = pageRectAt(next.spec, hit.slot, axis);
       const ni = marginInsets(margins, hit.slot);
       const s = noteImgSize(img, p.w - ni.l - ni.r, p.h - ni.t - ni.b);
-      // 充填済みは自然アスペクトを保つ（幅だけ版面へ再フィット）
+      // 充填済みは自然アスペクトを保つ（幅だけ版面へ再フィット）。
+      // v0.13: キャプション付きはキャプション行ぶん枠を高くする
       const h = d!.url ? s.w * (d!.aspect || s.h / s.w) : s.h;
       return {
         ...o,
@@ -2011,7 +2012,8 @@ export function App() {
           !(x.data as ImageData).url,
       );
   // 空枠へ画像を充填 — 幅は注記由来の枠のまま、高さは実画像の
-  // アスペクトへ合わせ直す（placeholder は出自情報として残す）
+  // アスペクトへ合わせ直す（placeholder は出自情報として残す。
+  // v0.13: キャプション付きはキャプション行ぶん高さを残す）
   const fillPlaceholder = (ph: WorldObject, url: string, aspect: number) => {
     patchObject(ph.id, {
       h: ph.w * aspect,
@@ -3153,13 +3155,13 @@ export function App() {
       for (const o of frames) {
         const d2 = o.data as ImageData;
         if (!d2.noWrap || !d2.placeholder) continue;
-        // ドラッグ/リサイズ中はアンカーへ寄せない — 帯の移動で
-        // 組版が揺れてアンカー計算と干渉し振動する
-        if (liveGeom) continue;
         // 生成・削除と同じく pos 順の添字で対応させる — pos 厳密
         // 一致だと本文編集で注記位置がずれた枠が永遠に対象外になる
         const fi = frames.indexOf(o);
         const img = imgs[fi];
+        // ドラッグ/リサイズ中はアンカーへ寄せない — 帯の移動で
+        // 組版が揺れてアンカー計算と干渉し振動する
+        if (liveGeom) continue;
         const zn = zones.get(c.id)?.get(fi);
         if (!img || !lrF) continue;
         const cur = pageOf(o);
@@ -4147,8 +4149,14 @@ export function App() {
             color: a?.link ? '#1a56c4' : a?.color,
             fontWeight: a?.bold ? 'bold' : undefined,
             fontStyle: a?.italic ? 'italic' : undefined,
-            textDecoration:
-              a?.underline || a?.link ? 'underline' : undefined,
+            textDecoration: a?.bosen
+              ? `underline ${a.bosen}`
+              : a?.underline || a?.link
+                ? 'underline'
+                : undefined,
+            // v0.13: 傍線（青空注記由来）— 縦組は字の右側へ引く
+            // （ルビ欄側=段の下側。青空 XHTML の underline 規定位置）
+            textUnderlinePosition: a?.bosen ? 'right' : undefined,
             // 傍点（青空注記由来）— 横書きは sesame、縦書きは
             // よみがな扱いでルビ欄へ「・」（vtrender 側）
             textEmphasis: a?.boten ? 'sesame' : undefined,
@@ -4246,8 +4254,9 @@ export function App() {
                       color: r.attrs.link ? '#1a56c4' : r.attrs.color,
                       fontWeight: r.attrs.bold ? 'bold' : undefined,
                       fontStyle: r.attrs.italic ? 'italic' : undefined,
-                      textDecoration:
-                        r.attrs.underline || r.attrs.link
+                      textDecoration: r.attrs.bosen
+                        ? `underline ${r.attrs.bosen}`
+                        : r.attrs.underline || r.attrs.link
                           ? 'underline'
                           : undefined,
                       textEmphasis: r.attrs.boten ? 'sesame' : undefined,

@@ -6,7 +6,7 @@
 import type { TFunc } from './i18n';
 
 /** 表示バージョン — リリース時に package.json×3 と揃える同期対象 */
-export const APP_VERSION = 'v0.12.0';
+export const APP_VERSION = 'v0.13.0';
 
 /** 配布元トップ — About からの外部導線（cuculhart.com） */
 export const APP_URL = 'https://cuculhart.com/';

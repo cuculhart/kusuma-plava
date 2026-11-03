@@ -1,7 +1,7 @@
 {
   "name": "kusuma-plava",
   "private": true,
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "A vertical-writing layout editor for Japanese documents — write horizontally, compose vertically. Linked text frames, image runaround, true millimeter printing.",
   "type": "module",
   "workspaces": [

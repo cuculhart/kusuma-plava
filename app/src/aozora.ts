@@ -25,10 +25,19 @@
 //     サイズ省略の旧式 `（file）入る` も同じ。text からは除去し
 //     位置だけ残す — 画像実体は txt に含まれないため呼び出し側が
 //     注記位置へ空枠を生成し、ユーザーが画像を割り当てる）
-//   - 対象［＃「対象」はキャプション］  → 直前テキストへ小字 fontSize mark
+//   - 対象［＃「対象」はキャプション］  → 直後/直前の画像注記と対応付け、
+//     キャプション文字列を画像（空枠）へ添付（v0.13 — 本文からは除去。
+//     対応付かないキャプションは従来どおり小字 fontSize mark）
 //   - ［＃キャプション］…［＃キャプション終わり］
 //     ［＃ここからキャプション］…［＃ここでキャプション終わり］
-//                                   → 囲まれた範囲へ小字 fontSize mark
+//                                   → 同上（囲まれた範囲が対象）
+//   - 対象［＃「対象」に[二重|鎖|破|波]傍線］・「の左に」形
+//     ［＃傍線］系…［＃…傍線終わり］・［＃ここから…傍線］ブロック
+//                                   → bosen mark（v0.13）
+//   - 対象［＃「対象」は太字］/［＃太字］…/［＃ここから太字］…
+//                                   → bold mark（v0.13）
+//   - 対象［＃「対象」は斜体］/［＃斜体］…/［＃ここから斜体］…
+//                                   → italic mark（v0.13）
 //   - ［＃］                        → 説明文としてそのまま残す
 //   - 上記以外（※外字注記含む）      → 除去して件数を dropped で報告
 // 前方参照型は対象文字列と直前テキストを照合し、ズレた注記は
@@ -77,6 +86,36 @@ const ANNOTATION = /［＃([^］]*)］/g;
 const FW_BOTEN = /^「(.+)」に.*傍点$/;
 const FW_HEADING = /^「(.+)」は[大中小]見出し$/;
 const FW_CAPTION = /^「(.+)」はキャプション$/;
+// v0.13: 強調系の前方参照 — 傍線（左指定含む）・太字・斜体。
+// 傍線の種別は名称がそのまま注記になる: 傍線/二重傍線/鎖線/破線/波線
+const FW_BOSEN = /^「(.+)」(?:に|の左に)(二重傍線|鎖線|破線|波線|傍線)$/;
+const FW_BOLD = /^「(.+)」は太字$/;
+const FW_ITALIC = /^「(.+)」は斜体$/;
+// 強調系の開始/終了型 — 傍線系（左に/種別）・太字・斜体。
+// 開始と終了は注記の「終わり」を除いた文字列が一致するペア
+const BOSEN_KEY = '(?:左に)?(?:二重傍線|鎖線|破線|波線|傍線)';
+const DECO_KEY = new RegExp('^' + BOSEN_KEY + '$|^太字$|^斜体$');
+// ブロック型の強調 — ［＃ここから太字］…［＃ここで太字終わり］
+const DECO_BLOCK_OPEN = new RegExp(
+  '^［＃ここから(' + BOSEN_KEY + '|太字|斜体)］$',
+);
+const DECO_BLOCK_CLOSE = new RegExp(
+  '^［＃ここで(' + BOSEN_KEY + '|太字|斜体)終わり］$',
+);
+/** 強調系のキー注記 → TextAttrs */
+const BOSEN_STYLE = {
+  傍線: 'solid',
+  二重傍線: 'double',
+  鎖線: 'dotted',
+  破線: 'dashed',
+  波線: 'wavy',
+} as const;
+const decoAttrs = (key: string): TextMark['attrs'] => {
+  if (key === '太字') return { bold: true };
+  if (key === '斜体') return { italic: true };
+  const m = key.match(/(二重傍線|鎖線|破線|波線|傍線)$/);
+  return m ? { bosen: BOSEN_STYLE[m[1] as keyof typeof BOSEN_STYLE] } : {};
+};
 const LINE_INDENT = /^［＃([０-９0-9]+)字下げ］/;
 const BLOCK_OPEN = /^［＃ここから([０-９0-9]+)字下げ］$/;
 const BLOCK_CLOSE = /^［＃ここで字下げ終わり］$/;
@@ -165,6 +204,10 @@ export function parseAozora(
   const outLines: string[] = [];
   let indent = 0; // ブロック字下げ中の字下げ幅
   let capS: number | null = null; // 開始注記待ちのキャプション開始位置
+  // v0.13: 閉じられたキャプション範囲（画像注記との対応付け用 —
+  // 本文から除去して画像へ添付する候補。未閉じの開始注記は対象外）
+  // v0.13: 強調系の開始注記待ち — キー（傍線系/太字/斜体）→ 開始位置
+  const decoOpen = new Map<string, number>();
   // v0.12: 折り返し字下げ — 継続行の字下げはパース時点で折返し位置が
   // 分からないため marks（hangIndent）で組版へ伝える。改行行頭側は
   // 従来どおり全角スペース挿入で処理する
@@ -368,6 +411,38 @@ export function parseAozora(
       rawOff += line.length + 1;
       continue;
     }
+    // v0.13: ブロック型の強調 — ［＃ここから太字］…［＃ここで太字終わり］。
+    // キャプションブロックと同じく注記行ごと畳み、範囲を marks へ
+    const dbo = line.match(DECO_BLOCK_OPEN);
+    if (dbo) {
+      decoOpen.set(dbo[1], offset);
+      handled++;
+      edits.push({
+        rawS: lineRaw,
+        rawE: lineRaw + line.length,
+        parsedS: offset,
+        insLen: 0,
+      });
+      rawOff += line.length + 1;
+      continue;
+    }
+    const dbc = line.match(DECO_BLOCK_CLOSE);
+    if (dbc) {
+      const s = decoOpen.get(dbc[1]);
+      if (s != null) {
+        marks.push({ start: s, end: offset, attrs: decoAttrs(dbc[1]) });
+        decoOpen.delete(dbc[1]);
+      }
+      handled++;
+      edits.push({
+        rawS: lineRaw,
+        rawE: lineRaw + line.length,
+        parsedS: offset,
+        insLen: 0,
+      });
+      rawOff += line.length + 1;
+      continue;
+    }
     let body = line;
     // body の index → 生行 index の補正（字下げで注記除去+空白挿入
     // するため、body 上の注記位置は生行とずれる）
@@ -434,10 +509,13 @@ export function parseAozora(
       const b = note.match(FW_BOTEN);
       const h = note.match(FW_HEADING);
       const cb = note.match(FW_CAPTION);
+      const bs = note.match(FW_BOSEN);
+      const bd = note.match(FW_BOLD);
+      const it = note.match(FW_ITALIC);
       const im = note.match(IMAGE_NOTE);
       const chm = note.match(LINE_CHIAGE);
-      if (b || h || cb) {
-        const t = (b ?? h ?? cb)![1];
+      if (b || h || cb || bs || bd || it) {
+        const t = (b ?? h ?? cb ?? bs ?? bd ?? it)![1];
         if (out.endsWith(t)) {
           const s = offset - t.length;
           marks.push({
@@ -445,7 +523,18 @@ export function parseAozora(
             end: offset,
             attrs: b
               ? { boten: true }
-              : { fontSize: h ? headingFs : captionFs },
+              : bs
+                ? {
+                    bosen:
+                      BOSEN_STYLE[
+                        bs[2] as keyof typeof BOSEN_STYLE
+                      ],
+                  }
+                : bd
+                  ? { bold: true }
+                  : it
+                    ? { italic: true }
+                    : { fontSize: h ? headingFs : captionFs },
           });
           handled++;
           edits.push({
@@ -482,6 +571,28 @@ export function parseAozora(
             attrs: { fontSize: captionFs },
           });
           capS = null;
+        }
+        handled++;
+        edits.push({
+          rawS: lineRaw + at + shift,
+          rawE: lineRaw + at + m[0].length + shift,
+          parsedS: offset,
+          insLen: 0,
+        });
+      } else if (DECO_KEY.test(note) || note.endsWith('終わり') && DECO_KEY.test(note.slice(0, -3))) {
+        // v0.13: 強調系の開始/終了型 — 開始はキーで位置を記録、
+        // 終了は「終わり」を除いたキーで開始位置を引き範囲を確定する。
+        // キーが一致しない開始・終了の孤立注記も受理（mark は付かない）
+        const close = note.endsWith('終わり');
+        const key = close ? note.slice(0, -3) : note;
+        if (close) {
+          const s = decoOpen.get(key);
+          if (s != null) {
+            marks.push({ start: s, end: offset, attrs: decoAttrs(key) });
+            decoOpen.delete(key);
+          }
+        } else {
+          decoOpen.set(key, offset);
         }
         handled++;
         edits.push({
@@ -593,26 +704,31 @@ export function parseAozora(
     rawOff += line.length + 1;
   }
 
-  const toParsed = (p: number) => {
-    let q = p;
-    for (const e of edits) {
-      if (e.rawE <= p) q += e.insLen - (e.rawE - e.rawS);
-      else if (e.rawS <= p) q = e.parsedS + e.insLen;
-      else break;
-    }
-    return q;
-  };
-  const toRaw = (q: number) => {
-    let p = q;
-    for (const e of edits) {
-      if (e.parsedS + e.insLen <= q) p -= e.insLen - (e.rawE - e.rawS);
-      else if (e.parsedS <= q) p = e.rawS;
-      else break;
-    }
-    return p;
+  // 位置マップ — edits（rawS 昇順）から双方向写像を組み立てる。
+  // キャプション対応付けの除去 edit を足して再構築するため関数化
+  const buildMaps = (es: Edit[]) => {
+    const toParsed = (p: number) => {
+      let q = p;
+      for (const e of es) {
+        if (e.rawE <= p) q += e.insLen - (e.rawE - e.rawS);
+        else if (e.rawS <= p) q = e.parsedS + e.insLen;
+        else break;
+      }
+      return q;
+    };
+    const toRaw = (q: number) => {
+      let p = q;
+      for (const e of es) {
+        if (e.parsedS + e.insLen <= q) p -= e.insLen - (e.rawE - e.rawS);
+        else if (e.parsedS <= q) p = e.rawS;
+        else break;
+      }
+      return p;
+    };
+    return { toParsed, toRaw };
   };
 
-  const text = outLines.join('\n');
+  let text = outLines.join('\n');
   // 閉じられなかった開始注記は文書末までを範囲とみなす
   if (capS != null)
     marks.push({ start: capS, end: text.length, attrs: { fontSize: captionFs } });
@@ -620,5 +736,9 @@ export function parseAozora(
     marks.push({ start: hangS, end: text.length, attrs: { hangIndent: hang } });
   if (chiS != null)
     marks.push({ start: chiS, end: text.length, attrs: { bottomLift: chiLift } });
+  for (const [k, s] of decoOpen)
+    marks.push({ start: s, end: text.length, attrs: decoAttrs(k) });
+
+  const { toParsed, toRaw } = buildMaps(edits);
   return { text, marks, images, breaks, handled, dropped, toParsed, toRaw };
 }

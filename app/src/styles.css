@@ -362,6 +362,16 @@ body,
   position: relative;
 }
 
+/* v0.13: ぶら下げ禁則で段下端へはみ出す句読点（升目枠下端の
+   外へ最大1字=升目下端の外の空白側）が .ki-obj の overflow:hidden
+   で切れるのを防ぐ — 縦書きスライスを持つ枠は下端だけ開ける
+   （.ta-slice.vt の clip-path 方式と同じ。枠内の他要素は
+   上・左右で従来どおり clip される） */
+.ki-obj:has(.ta-slice.vt) {
+  overflow: visible;
+  clip-path: inset(0 0 -50% 0);
+}
+
 /* ── 縦書きスライス: vertical-rl + 原稿用紙の升目 ──
    --cell/--lane/--pitch は各エリアの fontSize から inline で与える
    （編集画面=px、印刷=mm）。升目は右上起点 — 縦組の開始隅に合わせる */

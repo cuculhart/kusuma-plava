@@ -233,6 +233,89 @@ describe('parseAozora — キャプション注記（v0.9）', () => {
   });
 });
 
+describe('parseAozora — 強調注記: 傍線・太字・斜体（v0.13）', () => {
+  it('傍線: 直前の対象へ bosen mark、注記は除去', () => {
+    const r = parseAozora('この形は傍線［＃「傍線」に傍線］と書く');
+    expect(r.text).toBe('この形は傍線と書く');
+    expect(r.marks).toEqual([
+      { start: 4, end: 6, attrs: { bosen: 'solid' } },
+    ]);
+    expect(r.handled).toBe(1);
+  });
+
+  it('傍線の種別 — 二重/鎖/破/波と左指定を受理', () => {
+    expect(
+      parseAozora('責［＃「責」に二重傍線］').marks[0].attrs,
+    ).toEqual({ bosen: 'double' });
+    expect(parseAozora('責［＃「責」に鎖線］').marks[0].attrs).toEqual({
+      bosen: 'dotted',
+    });
+    expect(parseAozora('責［＃「責」に破線］').marks[0].attrs).toEqual({
+      bosen: 'dashed',
+    });
+    expect(parseAozora('責［＃「責」に波線］').marks[0].attrs).toEqual({
+      bosen: 'wavy',
+    });
+    expect(
+      parseAozora('責［＃「責」の左に傍線］').marks[0].attrs,
+    ).toEqual({ bosen: 'solid' });
+  });
+
+  it('太字: 直前の対象へ bold mark', () => {
+    const r = parseAozora('選考［＃「選考」は太字］するんだ');
+    expect(r.text).toBe('選考するんだ');
+    expect(r.marks).toEqual([
+      { start: 0, end: 2, attrs: { bold: true } },
+    ]);
+  });
+
+  it('斜体: 直前の対象へ italic mark', () => {
+    const r = parseAozora('Decne［＃「Decne」は斜体］.');
+    expect(r.text).toBe('Decne.');
+    expect(r.marks).toEqual([
+      { start: 0, end: 5, attrs: { italic: true } },
+    ]);
+  });
+
+  it('開始/終了型: ［＃傍線］…［＃傍線終わり］ で範囲へ mark', () => {
+    const r = parseAozora('［＃傍線］青空文庫［＃傍線終わり］。');
+    expect(r.text).toBe('青空文庫。');
+    expect(r.marks).toEqual([
+      { start: 0, end: 4, attrs: { bosen: 'solid' } },
+    ]);
+    expect(r.handled).toBe(2);
+  });
+
+  it('開始/終了型: ［＃太字］…［＃太字終わり］・［＃斜体］…［＃斜体終わり］', () => {
+    const r = parseAozora('「［＃太字］選考するんだ［＃太字終わり］」');
+    expect(r.marks).toEqual([
+      { start: 1, end: 7, attrs: { bold: true } },
+    ]);
+    const s = parseAozora('［＃斜体］Nothing［＃斜体終わり］.');
+    expect(s.marks).toEqual([
+      { start: 0, end: 7, attrs: { italic: true } },
+    ]);
+  });
+
+  it('ブロック型: ［＃ここから太字］…［＃ここで太字終わり］', () => {
+    const r = parseAozora(
+      '前。\n［＃ここから太字］\n見出し\n［＃ここで太字終わり］\n後。',
+    );
+    expect(r.text).toBe('前。\n見出し\n後。');
+    expect(r.marks).toEqual([
+      { start: 3, end: 7, attrs: { bold: true } },
+    ]);
+    expect(r.handled).toBe(2);
+  });
+
+  it('閉じない強調開始注記は文書末までを範囲とみなす', () => {
+    const r = parseAozora('［＃傍線］残り全部');
+    expect(r.marks).toEqual([
+      { start: 0, end: 4, attrs: { bosen: 'solid' } },
+    ]);
+  });
+});
+
 describe('parseAozora — 凹凸字下げ・地付き/地寄せ（v0.12）', () => {
   it('ここから○字下げ、折り返して●字下げ: 行頭はスペース・折返しは mark', () => {
     const r = parseAozora(
