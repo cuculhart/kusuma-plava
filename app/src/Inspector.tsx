@@ -357,10 +357,6 @@ export function RightDock({
           textJump={textJump}
           t={t}
         />
-        <details className="doc-settings">
-          <summary>{t('doc.settings')}</summary>
-          <DocProps {...docProps} t={t} />
-        </details>
       </>
     ) : (
       // 連鎖が無い書庫は文書プロパティへフォールバック
@@ -823,7 +819,9 @@ function withAlpha(hex6: string, alpha: number): string {
   return a >= 255 ? hex6 : hex6 + a.toString(16).padStart(2, '0');
 }
 
-function DocProps({
+// v0.11: 右側メニューの文書設定パネルでも使うため export
+// （ドック内 details から右端レールのフロートパネルへ移設 — 入力欄確保）
+export function DocProps({
   title,
   onTitle,
   size,

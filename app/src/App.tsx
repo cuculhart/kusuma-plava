@@ -41,7 +41,7 @@ import {
   type VFlow,
 } from 'inimbal';
 import { About } from './About';
-import { RightDock } from './Inspector';
+import { RightDock, DocProps } from './Inspector';
 import { LinkWires, type LinkSel } from './LinkWires';
 import { MenuPane, type ShapeTool, type Theme } from './MenuPane';
 import { PageNav } from './PageNav';
@@ -557,7 +557,11 @@ export function App() {
   // （ダークテーマでは暗い紙＋明るい文字の組合せにする）
   const [paperColor, setPaperColor] = useState('#ffffff');
   const [footer, setFooter] = useState(false);
-  const [navCollapsed, setNavCollapsed] = useState(false);
+  // v0.11: 右側メニュー — 頁ナビと文書設定を右端レールの
+  // フロートパネルへ折りたためる（入力欄を広く使うため）
+  const [sidePanel, setSidePanel] = useState<'nav' | 'doc' | null>(
+    'nav',
+  );
   const [activePage, setActivePage] = useState(0);
   const [shapeTool, setShapeTool] = useState<ShapeTool | null>(null);
   const [shapeDrag, setShapeDrag] = useState<{
@@ -2680,9 +2684,25 @@ export function App() {
         const line = lines[li];
         const hm = /［＃「(.{1,30})」は[大中小]見出し］/.exec(line);
         const bm = /^[＊◇※]+\s*$/.exec(line);
+        const bh = /［＃ここから[大中小]見出し］/.test(line);
+        // v0.11: 注記無しの章行も章境界へ — 青空作品には
+        // 「一、…」「第…章」や単独数字行で章を区切るものが多い
+        const clean = line.replace(/［＃[^］]*］/g, '').trim();
+        const dm = /^第[0-9０-９一二三四五六七八九十百千]+[章話節編部回]/.test(
+          clean,
+        );
+        const km =
+          clean.length <= 24 &&
+          /^[一二三四五六七八九十]{1,3}[、．・　]/.test(clean);
+        const nm = /^[一二三四五六七八九十]{1,3}$/.test(clean);
         if (hm) {
           items.push({ pos: pz ? pz.toParsed(off) : off, name: hm[1] });
-        } else if (bm) {
+        } else if (dm || km || nm) {
+          items.push({
+            pos: pz ? pz.toParsed(off) : off,
+            name: clean.slice(0, 24),
+          });
+        } else if (bm || bh) {
           let nl = '';
           for (let k = li + 1; k < lines.length; k++) {
             const t2 = lines[k]
@@ -4265,6 +4285,52 @@ export function App() {
     localStorage.setItem('kusuma-theme', t);
   };
 
+  // v0.11: 文書設定プロップス — RightDock と右側フロートパネルの
+  // 両方から参照するため定数化（パネルは右端レールから開く）
+  const docPropsObj = {
+    title: docTitle,
+    onTitle: setDocTitle,
+    size: spec.size,
+    landscape: spec.landscape,
+    pageCount: model.pages.length,
+    footer,
+    onSize: setSize,
+    onLandscape: toggleLandscape,
+    onAddPage: appendPage,
+    onInsertAfter: insertAt,
+    onFooter: setFooter,
+    pageOpacity,
+    onOpacity: setPageOpacity,
+    paperColor,
+    onPaperColor: setPaperColor,
+    font: docFont,
+    onFont: applyDocFont,
+    docColor,
+    onDocColor: applyDocColor,
+    pageNum,
+    onPageNum: setPageNum,
+    gridPrint,
+    onGridPrint: setGridPrint,
+    genko,
+    onGenko: applyGenko,
+    gridColor,
+    onGridColor: setGridColor,
+    gridAlpha,
+    onGridAlpha: setGridAlpha,
+    gridBg,
+    onGridBg: setGridBg,
+    gridBgAlpha,
+    onGridBgAlpha: setGridBgAlpha,
+    hashira,
+    onHashira: setHashira,
+    margins,
+    onMargins: applyMargins,
+    collapseNl,
+    onCollapseNl: setCollapseNl,
+    hanmenCells,
+    fit400fs: cellArea ? fit400fs : null,
+    onFit400: fit400,
+  };
   return (
     <div
       className={writeMode ? 'app mode-write' : 'app'}
@@ -4614,15 +4680,56 @@ export function App() {
               cursor={engine.cursorWorld}
             />
           )}
-          <PageNav
-            current={curPage}
-            total={rects.length}
-            collapsed={navCollapsed}
-            onToggle={() => setNavCollapsed((v) => !v)}
-            onGo={goToPage}
-            chapters={chapterNav}
-            t={t}
-          />
+          {/* v0.11: 右側メニュー — 頁ナビ/文書設定は右端レールの
+              ボタンで開閉するフロートパネルへ（入力欄を広く使う
+              ため。レールは常時表示、パネルは同時に1つ） */}
+          <div className="side-rail">
+            <button
+              className={sidePanel === 'nav' ? 'active' : ''}
+              title={t('side.nav')}
+              onClick={() =>
+                setSidePanel((p) => (p === 'nav' ? null : 'nav'))
+              }
+            >
+              頁
+            </button>
+            <button
+              className={sidePanel === 'doc' ? 'active' : ''}
+              title={t('side.doc')}
+              onClick={() =>
+                setSidePanel((p) => (p === 'doc' ? null : 'doc'))
+              }
+            >
+              設
+            </button>
+          </div>
+          {sidePanel === 'nav' && (
+            <PageNav
+              current={curPage}
+              total={rects.length}
+              collapsed={false}
+              onToggle={() => setSidePanel(null)}
+              onGo={goToPage}
+              chapters={chapterNav}
+              t={t}
+            />
+          )}
+          {sidePanel === 'doc' && (
+            <div className="side-panel doc">
+              <div className="sp-head">
+                <span>{t('doc.settings')}</span>
+                <button
+                  title={t('chain.close')}
+                  onClick={() => setSidePanel(null)}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="sp-body">
+                <DocProps {...docPropsObj} t={t} />
+              </div>
+            </div>
+          )}
           {/* N-19: スクロール（ホイールパン不慣れ対策のフローティングUI）。
               v0.7: 執筆モードはページナビのみへ再構成し左右ボタンを
               廃止 — 残るのは組版（縦積み）の俯瞰移動用 */}
@@ -4783,50 +4890,7 @@ export function App() {
             );
             engine.setSelection([id]);
           }}
-          docProps={{
-            title: docTitle,
-            onTitle: setDocTitle,
-            size: spec.size,
-            landscape: spec.landscape,
-            pageCount: model.pages.length,
-            footer,
-            onSize: setSize,
-            onLandscape: toggleLandscape,
-            onAddPage: appendPage,
-            onInsertAfter: insertAt,
-            onFooter: setFooter,
-            pageOpacity,
-            onOpacity: setPageOpacity,
-            paperColor,
-            onPaperColor: setPaperColor,
-            font: docFont,
-            onFont: applyDocFont,
-            docColor,
-            onDocColor: applyDocColor,
-            pageNum,
-            onPageNum: setPageNum,
-            gridPrint,
-            onGridPrint: setGridPrint,
-            genko,
-            onGenko: applyGenko,
-            gridColor,
-            onGridColor: setGridColor,
-            gridAlpha,
-            onGridAlpha: setGridAlpha,
-            gridBg,
-            onGridBg: setGridBg,
-            gridBgAlpha,
-            onGridBgAlpha: setGridBgAlpha,
-            hashira,
-            onHashira: setHashira,
-            margins,
-            onMargins: applyMargins,
-            collapseNl,
-            onCollapseNl: setCollapseNl,
-            hanmenCells,
-            fit400fs: cellArea ? fit400fs : null,
-            onFit400: fit400,
-          }}
+          docProps={docPropsObj}
           t={t}
         />
       </div>

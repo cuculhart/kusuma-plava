@@ -1261,6 +1261,70 @@ body,
   border-radius: 4px;
 }
 
+/* v0.11: 右側メニュー — レール＋フロートパネル */
+.side-rail {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 9;
+}
+.side-rail button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+.side-rail button.active {
+  background: var(--accent, #666);
+  color: #fff;
+}
+.side-panel.doc {
+  position: absolute;
+  right: 44px;
+  top: 10%;
+  bottom: 10%;
+  width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  z-index: 9;
+  overflow: hidden;
+}
+.side-panel .sp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 600;
+}
+.side-panel .sp-head button {
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+}
+.side-panel .sp-body {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+  font-size: 13px;
+}
+
 .page-nav.collapsed {
   font-size: 11px;
   padding: 3px 10px;
