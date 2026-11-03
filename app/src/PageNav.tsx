@@ -1,5 +1,7 @@
 // ページナビゲーション部品 — フローティング・折りたたみ可。
-// 先頭/前/次 + 現在ページ表示 + 番号ジャンプ。移動のみ（追加/削除は左メニュー）。
+// 先頭/前/次/最終 + 現在ページ表示 + 番号ジャンプ。移動のみ（追加/削除は左メニュー）。
+// 矢印の向きは書籍のページ順（右→左）に合わせる — 左向き=後へ進む、
+// 右向き=前へ戻る（執筆モードの横積みの並び方向と体感を揃える）。
 
 import { useState } from 'react';
 import type { TFunc } from './i18n';
@@ -38,10 +40,11 @@ export function PageNav({
   }
   return (
     <div className="page-nav">
-      <button onClick={() => go(0)} title={t('nav.first')}>
+      {/* ページは右→左に続くため、左向きのボタンが後方（次・最終） */}
+      <button onClick={() => go(total - 1)} title={t('nav.last')}>
         ≪
       </button>
-      <button onClick={() => go(current - 1)} title={t('nav.prev')}>
+      <button onClick={() => go(current + 1)} title={t('nav.next')}>
         ＜
       </button>
       <span className="pn-cur">
@@ -63,10 +66,10 @@ export function PageNav({
         {' / '}
         {total}
       </span>
-      <button onClick={() => go(current + 1)} title={t('nav.next')}>
+      <button onClick={() => go(current - 1)} title={t('nav.prev')}>
         ＞
       </button>
-      <button onClick={() => go(total - 1)} title={t('nav.last')}>
+      <button onClick={() => go(0)} title={t('nav.first')}>
         ≫
       </button>
       <button className="pn-fold" onClick={onToggle} title={t('nav.fold')}>
