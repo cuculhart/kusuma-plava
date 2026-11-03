@@ -1251,6 +1251,16 @@ body,
   border-radius: 3px;
 }
 
+/* v0.11: 章ジャンプのセレクト — 長い章名は省略 */
+.page-nav .pn-chap {
+  max-width: 10em;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
 .page-nav.collapsed {
   font-size: 11px;
   padding: 3px 10px;

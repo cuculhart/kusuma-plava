@@ -3917,21 +3917,21 @@ export function App() {
   // v0.11: 柱の章ごと版 — ページに乗るスライス末尾（parsed 座標）
   // までの直近の章境界名をその頁の柱へ出す。境界の無い頁・
   // 先頭境界より前の頁は doc 設定の柱（hashira）へ畳む
+  // hit-test は実オブジェクト座標の軸で（執筆='x'・組版='y'・見開き）
+  const navPrs = pageRects(model.spec, model.pages, curAxis());
+  const navPageOf = (o: WorldObject | undefined) => {
+    if (!o) return -1;
+    const cx = o.x + o.w / 2;
+    const cy = o.y + o.h / 2;
+    return (
+      navPrs.find(
+        (r) =>
+          cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
+      )?.index ?? -1
+    );
+  };
   const pageChapter = (() => {
-    const m = new Map<number, { name: string; start: number }>();
-    // hit-test は実オブジェクト座標の軸で（執筆='x'・組版='y'・見開き）
-    const prs = pageRects(model.spec, model.pages, curAxis());
-    const pageOf = (o: WorldObject | undefined) => {
-      if (!o) return -1;
-      const cx = o.x + o.w / 2;
-      const cy = o.y + o.h / 2;
-      return (
-        prs.find(
-          (r) =>
-            cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h,
-        )?.index ?? -1
-      );
-    };
+    const m = new Map<number, string>();
     for (const c of chains) {
       const bounds = chapterBounds.get(c.id);
       if (!bounds?.length) continue;
@@ -3940,45 +3940,50 @@ export function App() {
       // ページごとの最終スライス位置（parsed 座標・排他端）を集める
       const endByPage = new Map<number, number>();
       for (const sl of lr.slices) {
-        const pi = pageOf(objById.get(sl.areaId));
+        const pi = navPageOf(objById.get(sl.areaId));
         if (pi < 0) continue;
         const end = sl.offset + sl.text.length;
         if (end > (endByPage.get(pi) ?? -1)) endByPage.set(pi, end);
       }
       for (const [pi, end] of endByPage) {
         if (m.has(pi)) continue; // 先の連鎖の章を優先
-        let bound: { pos: number; name: string } | undefined;
+        let name: string | undefined;
         for (const b of bounds) {
-          if (b.pos < end) bound = b;
+          if (b.pos < end) name = b.name;
           else break;
         }
-        if (bound) {
-          // 章の開始頁 = 境界位置が載るスライスの頁（欄外クリックの
-          // ジャンプ先 — 章の途中頁から先頭頁へ戻れる）
-          const sl =
-            lr.slices.find(
-              (s) => bound!.pos < s.offset + s.text.length,
-            ) ?? lr.slices[lr.slices.length - 1];
-          m.set(pi, {
-            name: bound.name,
-            start: sl ? pageOf(objById.get(sl.areaId)) : -1,
-          });
-        }
+        if (name) m.set(pi, name);
       }
     }
     return m;
   })();
-  const hashiraAt = (index: number) =>
-    pageChapter.get(index)?.name ?? hashira;
-  const chapterStartAt = (index: number) =>
-    pageChapter.get(index)?.start ?? -1;
+  const hashiraAt = (index: number) => pageChapter.get(index) ?? hashira;
+  // v0.11: 章一覧（ページナビのジャンプ用）— 各章境界の開始頁を
+  // 境界位置が載るスライスから引く（柱クリックは頁クリック送りと
+  // 競合するためペイン選択式へ — 欄外は表示専用）
+  const chapterNav = (() => {
+    const out: { name: string; page: number }[] = [];
+    for (const c of chains) {
+      const bounds = chapterBounds.get(c.id);
+      if (!bounds?.length) continue;
+      const lr = layouts.get(c.id);
+      if (!lr) continue;
+      for (const b of bounds) {
+        const sl =
+          lr.slices.find((s) => b.pos < s.offset + s.text.length) ??
+          lr.slices[lr.slices.length - 1];
+        if (!sl) continue;
+        const p = navPageOf(objById.get(sl.areaId));
+        if (p >= 0) out.push({ name: b.name, page: p });
+      }
+    }
+    return out;
+  })();
 
   const renderObject = (o: WorldObject) => {
     if (o.kind === PAGE_KIND) {
       const d = o.data as { index: number };
-      // v0.11: 柱 — 章名がある頁は章の先頭頁へジャンプできる
       const hs = hashiraAt(d.index);
-      const csp = chapterStartAt(d.index);
       return (
         <>
         <div
@@ -4030,23 +4035,13 @@ export function App() {
         {hs !== '' && (
           <div
             className="hashira-canvas nodrag"
-            title={csp >= 0 ? t('hashira.toChapter') : undefined}
             style={{
               top: hashiraRect.top * MM_PX * z,
               right: hashiraRect.right * MM_PX * z,
               fontSize: Math.max(9, hashiraRect.size * MM_PX * z),
               fontFamily: docFont,
               color: docColor,
-              cursor: csp >= 0 ? 'pointer' : undefined,
             }}
-            onClick={
-              csp >= 0
-                ? (e) => {
-                    e.stopPropagation();
-                    focusPage(csp);
-                  }
-                : undefined
-            }
           >
             {hs}
           </div>
@@ -4625,6 +4620,7 @@ export function App() {
             collapsed={navCollapsed}
             onToggle={() => setNavCollapsed((v) => !v)}
             onGo={goToPage}
+            chapters={chapterNav}
             t={t}
           />
           {/* N-19: スクロール（ホイールパン不慣れ対策のフローティングUI）。
