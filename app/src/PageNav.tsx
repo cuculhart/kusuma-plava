@@ -66,6 +66,9 @@ export function PageNav({
       <button onClick={() => go(current + 1)} title={t('nav.next')}>
         ＞
       </button>
+      <button onClick={() => go(total - 1)} title={t('nav.last')}>
+        ≫
+      </button>
       <button className="pn-fold" onClick={onToggle} title={t('nav.fold')}>
         −
       </button>
