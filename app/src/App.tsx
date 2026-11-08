@@ -51,6 +51,7 @@ import { Rulers } from './Rulers';
 import { makeT, tf, type Lang } from './i18n';
 import { ARCHIVE_EXT, packArchive, unpackArchive } from './docio';
 import { clearDraft, loadDraft, saveDraft } from './autosave';
+import { b64ToU8, basename, isDesktop, kp, u8ToB64 } from './desktop';
 import { createCanvasMeasurer } from './measure';
 import { vunitSpans, type VStyle } from './vtrender';
 import { parseAozora, type AozoraResult } from './aozora';
@@ -578,6 +579,15 @@ export function App() {
   const [histTick, setHistTick] = useState(0);
   const createdAtRef = useRef(new Date().toISOString());
   const dirtyRef = useRef(false);
+  // 直近に文書を丸ごと適用した印 — 新規/開く/復元の直後は
+  // 差分検知で dirty へ戻らないよう次の1回をクリーン扱いにする
+  const cleanNextRef = useRef(false);
+  // デスクトップ: 開いている書庫ファイルのパス（null=未保存先なし）
+  const [docPath, setDocPath] = useState<string | null>(null);
+  // デスクトップ: タイトルバーの * 表示用（dirtyRef のミラー）
+  const [dirtyUi, setDirtyUi] = useState(false);
+  // 起動引数/exeドロップでファイルを開いた印 — 下書き復元より優先する
+  const openedFromPathRef = useRef(false);
   const applyingRef = useRef(false);
   const [docFont, setDocFont] = useState(DEFAULT_FONT_FAMILY);
   // v0.9: 文書既定の文字色 — 文書設定。既定フォントと同じく
@@ -752,6 +762,14 @@ export function App() {
   const flash = (msg: string) => {
     setHint(msg);
     window.setTimeout(() => setHint((h) => (h === msg ? '' : h)), 2500);
+  };
+
+  // 未保存フラグの一本管理 — ref（beforeunload/保存判定用）・
+  // state（タイトルバー表示用）・メインプロセス（close ガード用）を同期
+  const markDirty = (v: boolean) => {
+    dirtyRef.current = v;
+    setDirtyUi(v);
+    kp?.setDirty(v);
   };
 
   // ── 初期化: ページ枠 + デモの連鎖エリア ──
@@ -1310,7 +1328,9 @@ export function App() {
       snapRef.current = makeSnap();
       return;
     }
-    dirtyRef.current = true;
+    // 文書全体の適用直後（開く/新規/復元）は差分検知をクリーン扱い
+    if (cleanNextRef.current) cleanNextRef.current = false;
+    else markDirty(true);
     if (applyingRef.current) return;
     const now = Date.now();
     if (now - histRef.current.last > 500) {
@@ -1327,6 +1347,9 @@ export function App() {
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
+    // デスクトップはメインプロセス側の close ガードが担う —
+    // beforeunload を張ると保存確認のあとも無言で close が阻まれる
+    if (isDesktop) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (dirtyRef.current) e.preventDefault();
     };
@@ -1341,7 +1364,8 @@ export function App() {
     let alive = true;
     void loadDraft().then((rec) => {
       draftReadyRef.current = true;
-      if (!alive || !rec) return;
+      // デスクトップ: 起動引数の文書が先に開かれていたら下書きは触らない
+      if (!alive || !rec || openedFromPathRef.current) return;
       // v0.11: 別文書の下書きは復元しない — 最後に開いていた
       // 文書の fp と不一致ならスキップ（両方無い旧形式は従来どおり）
       const lastFp = localStorage.getItem('kusuma-docfp');
@@ -1599,12 +1623,14 @@ export function App() {
     // v0.11: 文書が切り替わった時点で fp を更新 — 旧文書の
     // 下書きが残っていても次回起動で誤復元しない
     stampDocFp(createdAtRef.current, '');
-    dirtyRef.current = false;
+    cleanNextRef.current = true;
+    markDirty(false);
+    setDocPath(null);
     engine.setSelection([]);
     focusPage(0, d.model);
   };
-  const confirmSave = (name: string) => {
-    const u8 = packArchive({
+  const packCurrent = () =>
+    packArchive({
       spec: model.spec,
       pages: model.pages,
       objects: canon(contentObjects()),
@@ -1629,6 +1655,8 @@ export function App() {
       kinsoku,
       goal,
     });
+  const confirmSave = (name: string) => {
+    const u8 = packCurrent();
     const a = document.createElement('a');
     const url = URL.createObjectURL(
       new Blob([u8.buffer as ArrayBuffer], {
@@ -1641,7 +1669,7 @@ export function App() {
       : `${name}${ARCHIVE_EXT}`;
     a.click();
     URL.revokeObjectURL(url);
-    dirtyRef.current = false;
+    markDirty(false);
     setSaveDlg(null);
   };
   // 書庫の展開結果をアプリ状態へ反映する（書庫読込と下書き復元で共用）
@@ -1726,7 +1754,8 @@ export function App() {
     // v0.11: 下書き fingerprint を開いた文書へ更新（下書き復元
     // 経路でも同一 fp になるため二重書きは害なし）
     stampDocFp(createdAtRef.current, r.title);
-    dirtyRef.current = false;
+    cleanNextRef.current = true;
+    markDirty(false);
     engine.setSelection([]);
     focusPage(0, r.model);
   };
@@ -1738,6 +1767,134 @@ export function App() {
       .then((buf) => applyArchive(unpackArchive(new Uint8Array(buf))))
       .catch((err: Error) => flash(tf(t, 'hint.cantOpen', err.message)));
   };
+
+  // ── デスクトップ（Electron）: ネイティブの開く/保存 ──
+  // ブラウザ配布では kp が未定義 — メニュー側は isDesktop で分岐し、
+  // こちらはブラウザ用の download/input 経路へ残す
+  const saveDesktop = async (forceDialog = false): Promise<boolean> => {
+    if (!kp) return false;
+    try {
+      let p = docPath;
+      if (forceDialog || !p) {
+        p = await kp.saveDialog(
+          `${docTitle || 'document'}${ARCHIVE_EXT}`,
+        );
+        if (!p) return false;
+      } else if (
+        // 既存ファイルの上書きは毎回確認する（取り消し不可のため）
+        !window.confirm(tf(t, 'confirm.overwrite', basename(p)))
+      ) {
+        return false;
+      }
+      await kp.writeFile(p, u8ToB64(packCurrent()));
+      setDocPath(p);
+      markDirty(false);
+      flash(t('hint.saved'));
+      return true;
+    } catch (err) {
+      flash(tf(t, 'hint.saveFail', String(err)));
+      return false;
+    }
+  };
+  const openDesktopPath = async (p: string) => {
+    if (!kp) return;
+    try {
+      const b64 = await kp.readFile(p);
+      openedFromPathRef.current = true;
+      applyArchive(unpackArchive(b64ToU8(b64)));
+      setDocPath(p);
+    } catch (err) {
+      flash(tf(t, 'hint.cantOpen', String(err)));
+    }
+  };
+  const openDesktop = async () => {
+    if (!kp) return;
+    try {
+      const f = await kp.openDialog();
+      if (!f) return;
+      applyArchive(unpackArchive(b64ToU8(f.b64)));
+      setDocPath(f.path);
+    } catch (err) {
+      flash(tf(t, 'hint.cantOpen', String(err)));
+    }
+  };
+  // 一度だけ bind されるデスクトップ初期化エフェクトから
+  // 最新のハンドラを呼ぶための ref（state クロージャの陳腐化対策）
+  const desktopActions = useRef({
+    saveDesktop,
+    openDesktop,
+    openDesktopPath,
+    newDoc,
+    undo,
+    redo,
+  });
+  desktopActions.current = {
+    saveDesktop,
+    openDesktop,
+    openDesktopPath,
+    newDoc,
+    undo,
+    redo,
+  };
+
+  useEffect(() => {
+    const api = kp;
+    if (!api) return;
+    const offMenu = api.onMenu((a) => {
+      const d = desktopActions.current;
+      if (a === 'open') void d.openDesktop();
+      else if (a === 'save' || a === 'save-as')
+        void d.saveDesktop(a === 'save-as');
+      else if (a === 'new') d.newDoc();
+      else if (a === 'undo') d.undo();
+      else if (a === 'redo') d.redo();
+      else if (a === 'print') setPrinting(true);
+      else if (a === 'about') setAboutOpen(true);
+    });
+    const offQuit = api.onSaveForQuit(() => {
+      void desktopActions.current
+        .saveDesktop()
+        .then((ok) => (ok ? api.quitNow() : api.quitAbort()));
+    });
+    const offOpen = api.onOpenPath((p) =>
+      void desktopActions.current.openDesktopPath(p),
+    );
+    void api
+      .takePendingFile()
+      .then((p) => {
+        if (p) void desktopActions.current.openDesktopPath(p);
+      })
+      .catch(() => {});
+    // ウィンドウへのファイルドロップ — Electron 既定はページ遷移なので
+    // 常に抑止し、書庫ファイルならそのまま開く
+    const eat = (e: DragEvent) => e.preventDefault();
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      const f = e.dataTransfer?.files?.[0];
+      if (!f) return;
+      const p = api.pathForFile(f);
+      if (p && /\.(chkpf|slm)$/i.test(p))
+        void desktopActions.current.openDesktopPath(p);
+    };
+    window.addEventListener('dragover', eat);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      offMenu();
+      offQuit();
+      offOpen();
+      window.removeEventListener('dragover', eat);
+      window.removeEventListener('drop', onDrop);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // デスクトップ: ウィンドウタイトルへ文書名・ファイル名・未保存印を出す
+  useEffect(() => {
+    if (!isDesktop) return;
+    document.title = `${dirtyUi ? '*' : ''}${docTitle || 'document'}${
+      docPath ? ` (${basename(docPath)})` : ''
+    } — Kusuma Plava`;
+  }, [docTitle, docPath, dirtyUi]);
 
   // 投稿用テキスト出力（v0.3）— 連鎖テキストを .txt で書き出す。
   // ルビは正規形 ｜親字《ヨミ》 のみに揃えるため (- -) 糖衣は正規化する
@@ -4521,8 +4678,22 @@ export function App() {
           collapsed={collapsed}
           onToggle={() => setCollapsed((v) => !v)}
           onNew={newDoc}
-          onOpen={() => openFileRef.current?.click()}
-          onSave={() => setSaveDlg(docTitle || 'document')}
+          onOpen={() =>
+            isDesktop
+              ? void desktopActions.current.openDesktop()
+              : openFileRef.current?.click()
+          }
+          onSave={() =>
+            isDesktop
+              ? void desktopActions.current.saveDesktop()
+              : setSaveDlg(docTitle || 'document')
+          }
+          saveLabel={isDesktop ? t('menu.saveDesktop') : undefined}
+          onSaveAs={
+            isDesktop
+              ? () => void desktopActions.current.saveDesktop(true)
+              : undefined
+          }
           onExportText={exportText}
           onImportText={() => textFileRef.current?.click()}
           onImportZip={() => aozoraZipRef.current?.click()}

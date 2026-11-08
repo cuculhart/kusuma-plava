@@ -21,6 +21,8 @@ export function MenuPane({
   onNew,
   onOpen,
   onSave,
+  saveLabel,
+  onSaveAs,
   onExportText,
   onImportText,
   onImportZip,
@@ -55,6 +57,10 @@ export function MenuPane({
   onNew: () => void;
   onOpen: () => void;
   onSave: () => void;
+  /** デスクトップ版は上書き保存なので「保存」表記へ切替 */
+  saveLabel?: string;
+  /** デスクトップ版のみ — 名前を付けて保存項目を追加する */
+  onSaveAs?: () => void;
   /** 投稿用テキスト出力（v0.3）— 連鎖テキストを .txt で書き出す */
   onExportText: () => void;
   /** v0.7: .txt を連鎖テキストへ読み込む */
@@ -131,10 +137,15 @@ export function MenuPane({
           配管は残置 — 英語アイコン enIc 分岐などがまだ参照する） */}
       {item('新', t('menu.new'), onNew, { enIc: 'N' })}
       {item('開', t('menu.openDoc'), onOpen, { enIc: 'O' })}
-      {item('存', t('menu.save'), onSave, {
+      {item('存', saveLabel ?? t('menu.save'), onSave, {
         title: t('menu.saveTip'),
         enIc: 'S',
       })}
+      {onSaveAs &&
+        item('名', t('menu.save'), onSaveAs, {
+          title: t('menu.saveAsTip'),
+          enIc: 'A',
+        })}
       {item('読', t('menu.importText'), onImportText, { enIc: 'T' })}
       {/* v0.9: 青空文庫 ZIP — txt ＋同梱画像の一括取り込み */}
       {item('青', t('menu.importZip'), onImportZip, { enIc: 'Z' })}

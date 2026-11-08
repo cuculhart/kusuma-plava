@@ -5,3 +5,4 @@ dist/
 nul
 .DS_Store
 Thumbs.db
+out/

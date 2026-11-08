@@ -4,7 +4,7 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.x     | :white_check_mark: |
+| 1.x     | :white_check_mark: |
 
 Security fixes are applied to the latest release only.
 

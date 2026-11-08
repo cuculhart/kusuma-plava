@@ -1,0 +1,25 @@
+{
+  "name": "kusuma-plava",
+  "productName": "Kusuma Plava",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Kusuma Plava desktop shell (Electron) — renderer is app/ built by Vite",
+  "author": "cuculhart",
+  "license": "MIT",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "node dev.mjs",
+    "electron:start": "electron .",
+    "start": "electron-forge start",
+    "package": "npm --prefix ../app run build && electron-forge package",
+    "make": "npm --prefix ../app run build && electron-forge make",
+    "icons": "node scripts/make-icon.mjs"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^8.0.1",
+    "@electron-forge/maker-deb": "^8.0.1",
+    "@electron-forge/maker-squirrel": "^8.0.1",
+    "@electron-forge/maker-zip": "^8.0.1",
+    "electron": "^44.10.0"
+  }
+}

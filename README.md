@@ -3,6 +3,7 @@
 日本の小説家・教科書制作者のための縦書き執筆エディタ。
 左ペインで横書きに書くと、右の版面が縦書きの原稿用紙として
 レンダリングされていく。
+v1.0.0 からデスクトップアプリ（Electron）として配布。
 
 > 木漏れ日と花筏。文を書けば、組版が流れ出す。
 
@@ -50,8 +51,24 @@
 - **.chkpf 書庫** — zip 形式（doc.json＋画像バイナリ）の独自
   アーカイブ。画像の位置・回り込みも保存される。完全ローカル
   で外部送信なし（旧 `.slm` も開けます）
+- **デスクトップ統合** — OS の「開く/保存」ダイアログで
+  `.chkpf` を直接読み書きし、Ctrl+S で上書き保存。
+  `.chkpf` を exe やウィンドウへドロップして開くこともできる。
+  未保存のまま閉じる時は保存確認を表示。タイトルバーに
+  文書名・ファイル名・未保存印 * を表示（ブラウザ版では従来
+  どおりダウンロード/ファイル選択で読み書き）
 
-## 使い方
+## 使い方（デスクトップ版）
+
+[Releases](https://github.com/cuculhart/kusuma-plava/releases)
+から各 OS 向けの配布物を取得してインストール。
+
+| OS | 配布形式 |
+|---|---|
+| Windows | `-win-x64.zip`（ポータブル — 解凍して `kusuma-plava.exe` を実行） |
+| Linux | `.deb` |
+
+## 使い方（開発・ブラウザ版）
 
 ```bash
 git clone https://github.com/cuculhart/kusuma-plava.git
@@ -61,6 +78,22 @@ npm run dev       # http://localhost:5173
 npm run build     # 本番ビルド → app/dist/
 npm run typecheck
 npm test
+```
+
+## 使い方（開発・デスクトップ版）
+
+`desktop/` は Electron シェルの独立 npm プロジェクト
+（root の `npm install` とは別に依存を持つ）。
+
+```bash
+cd kusuma-plava/desktop
+npm install            # 初回のみ（electron バイナリをDL）
+cd ..
+npm run dev:desktop        # Vite dev + Electron で起動
+npm run package:desktop    # out/ へ unpack 版を出力（ポータブル版）
+npm run make:desktop       # インストーラ作成（Windows=Squirrel / Linux=deb）
+                           # ※配布のポータブル版 zip は package 出力の
+                           #   out/ を手動で圧縮する
 ```
 
 ## ルビ記法
@@ -74,11 +107,14 @@ npm test
 
 ## 技術構成
 
-React + TypeScript + Vite。
+React + TypeScript + Vite + Electron。
 組版は [inimbal](inimbal/)（純粋モデルの文字送り層 — 縦版 fit() は
 単位カウントで、計測と描画が同じトークナイザを共有）、
 描画エンジンに kimetron（`kimetron/` に vendored 同梱）、
 書庫 zip に fflate。
+デスクトップシェルは [desktop/](desktop/)（Electron +
+electron-forge — Vite が束ねた `app/dist` を同梱する薄い殻で、
+レンダラのコードはブラウザ版と共通）。
 
 ## 名前の由来
 

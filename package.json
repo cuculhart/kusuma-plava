@@ -1,7 +1,7 @@
 {
   "name": "kusuma-plava",
   "private": true,
-  "version": "0.14.0",
+  "version": "1.0.0",
   "description": "A vertical-writing layout editor for Japanese documents — write horizontally, compose vertically. Linked text frames, image runaround, true millimeter printing.",
   "type": "module",
   "workspaces": [
@@ -11,9 +11,12 @@
   ],
   "scripts": {
     "dev": "npm run dev -w kusuma-plava-app",
+    "dev:desktop": "npm --prefix desktop run dev",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "package:desktop": "npm --prefix desktop run package",
+    "make:desktop": "npm --prefix desktop run make"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
