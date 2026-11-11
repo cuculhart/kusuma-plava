@@ -7,9 +7,11 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import type { WorldObject } from '@kimetron/core';
 import type { Chain, KinsokuMode, PageModel } from 'inimbal';
 import {
+  DEFAULT_DIALOG_COLOR,
   DEFAULT_GRID_COLOR,
   IMG_KIND,
   type GenkoGrid,
+  type GenkoStyle,
   type ImageData,
   type PageMargins,
 } from './types';
@@ -90,6 +92,14 @@ interface ArchiveDoc {
   /** v0.12: 禁則処理 — 'oidashi'（既定・欠落）= 分割点前倒し /
       'burasage' = 句読点を区間規定字に1字はみ出す（書籍組版向き） */
   kinsoku?: KinsokuMode;
+  /** v1.1: 升目デザイン — 'masu'（既定・欠落）/ 'tate'（段罫のみ）/
+      'none'（罫なし） */
+  genkoStyle?: GenkoStyle;
+  /** v1.1: 会話「」の色分け — 画面のみ（印刷には出ない）。
+      欠落=false */
+  dialogHl?: boolean;
+  /** v1.1: 会話色分けの色（#rrggbb）。欠落=DEFAULT_DIALOG_COLOR */
+  dialogColor?: string;
 }
 
 const EXT_OF_MIME: Record<string, string> = {
@@ -148,6 +158,9 @@ export function packArchive(input: {
   collapseNl?: boolean;
   goal?: number;
   kinsoku?: KinsokuMode;
+  genkoStyle?: GenkoStyle;
+  dialogHl?: boolean;
+  dialogColor?: string;
 }): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   let imgN = 0;
@@ -190,6 +203,17 @@ export function packArchive(input: {
     goal: input.goal ? Math.round(input.goal) : undefined,
     // 既定（追い出し）は書き出さない（欠落=oidashi）
     kinsoku: input.kinsoku === 'burasage' ? 'burasage' : undefined,
+    // v1.1: 既定（升目）は書き出さない（欠落=masu）
+    genkoStyle:
+      input.genkoStyle && input.genkoStyle !== 'masu'
+        ? input.genkoStyle
+        : undefined,
+    // false・既定色は書き出さない
+    dialogHl: input.dialogHl || undefined,
+    dialogColor:
+      input.dialogColor && input.dialogColor !== DEFAULT_DIALOG_COLOR
+        ? input.dialogColor
+        : undefined,
   };
   files['doc.json'] = strToU8(JSON.stringify(doc));
   return zipSync(files);
@@ -227,6 +251,12 @@ export function unpackArchive(bytes: Uint8Array): {
   goal: number;
   /** v0.12: 禁則処理。欠落・不正値は 'oidashi'（追い出し） */
   kinsoku: KinsokuMode;
+  /** v1.1: 升目デザイン。欠落・不正値は 'masu' */
+  genkoStyle: GenkoStyle;
+  /** v1.1: 会話「」色分け（画面のみ）。欠落は false */
+  dialogHl: boolean;
+  /** v1.1: 会話色分けの色。欠落・不正値は既定色 */
+  dialogColor: string;
 } {
   const files = unzipSync(bytes);
   const raw = files['doc.json'];
@@ -329,5 +359,15 @@ export function unpackArchive(bytes: Uint8Array): {
         ? Math.round(doc.goal)
         : 0,
     kinsoku: doc.kinsoku === 'burasage' ? 'burasage' : 'oidashi',
+    genkoStyle:
+      doc.genkoStyle === 'tate' || doc.genkoStyle === 'none'
+        ? doc.genkoStyle
+        : 'masu',
+    dialogHl: doc.dialogHl === true,
+    dialogColor:
+      typeof doc.dialogColor === 'string' &&
+      /^#[0-9a-fA-F]{6}$/.test(doc.dialogColor)
+        ? doc.dialogColor
+        : DEFAULT_DIALOG_COLOR,
   };
 }

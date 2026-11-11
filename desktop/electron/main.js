@@ -390,6 +390,15 @@ app.whenReady().then(async () => {
     return true
   })
 
+  // Page screenshot for SNS sharing - capture the whole viewport and
+  // let the renderer crop (capturePage's rect arg has zoomFactor/DPI
+  // quirks; cropping the full bitmap needs no coordinate semantics)
+  ipcMain.handle('kp:capture-page', async () => {
+    if (!mainWindow) return null
+    const img = await mainWindow.webContents.capturePage()
+    return img.toPNG().toString('base64')
+  })
+
   // Dirty flag for the close guard; pushed by the renderer
   ipcMain.on('kp:set-dirty', (event, d) => {
     rendererDirty = !!d

@@ -86,3 +86,56 @@ export async function clearDraft(): Promise<void> {
     /* 削除失敗は握り潰す — 次回自動保存で上書きされる */
   }
 }
+
+// ── v1.1: 升目の背景画像 — アプリ共通設定（全書で共有）。
+// 下書きと同じ kv ストアへ別キーで1レコード。書庫・Undo の
+// 対象外（.chkpf を膨らませない）──
+const BG_KEY = 'bgimg';
+
+export interface BgImgRec {
+  /** dataURL（FileReader 由来） */
+  url: string;
+  /** 透過率 0〜1 */
+  alpha: number;
+  /** フィット方式 — cover / contain / tile（repeat） */
+  fit: 'cover' | 'contain' | 'tile';
+  /** 用紙に表示 — true(欠落): 用紙全体へ敷く（升目枠内は
+      マスの背景色・透過がベールとして重なる）/
+      false: 用紙の外（作業面）にだけ表示。
+      旧レコードの scope フィールド（inside/outside）は
+      読み捨て — いずれも paper 扱い */
+  paper?: boolean;
+}
+
+/** 背景画像設定を保存（null で削除）。失敗は静かに諦める */
+export async function saveBgImg(rec: BgImgRec | null): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((res, rej) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      if (rec) tx.objectStore(STORE).put(rec, BG_KEY);
+      else tx.objectStore(STORE).delete(BG_KEY);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+    db.close();
+  } catch {
+    /* 保存失敗は握り潰す — 画面表示だけの装飾なので */
+  }
+}
+
+/** 背景画像設定を読む。無ければ null */
+export async function loadBgImg(): Promise<BgImgRec | null> {
+  try {
+    const db = await openDb();
+    const rec = await new Promise<BgImgRec | null>((res, rej) => {
+      const rq = db.transaction(STORE).objectStore(STORE).get(BG_KEY);
+      rq.onsuccess = () => res((rq.result as BgImgRec) ?? null);
+      rq.onerror = () => rej(rq.error);
+    });
+    db.close();
+    return rec;
+  } catch {
+    return null;
+  }
+}

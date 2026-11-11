@@ -1,7 +1,7 @@
 // 右ペイン（選択駆動・F12）— 選択種別ごとに表示を切り替える。
 // 右方向に折りたたみ可（G4）。
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   isShapeKind,
   shapeAnchors,
@@ -20,10 +20,12 @@ import { tf } from './i18n';
 import { ChainPane } from './ChainPane';
 import type {
   GenkoGrid,
+  GenkoStyle,
   ImageData,
   PageMargins,
   TextAreaData,
 } from './types';
+import type { BgImgRec } from './autosave';
 
 // v0.9: 升目仕様プリセット — id は i18n の doc.preset.<id> キーに対応。
 // margins は判型の実務的な推奨余白（天・地・ノド・小口・mm）
@@ -309,6 +311,18 @@ export function RightDock({
     /** v0.12: 禁則処理 — 追い出し（既定）/ ぶら下げ */
     kinsoku: KinsokuMode;
     onKinsoku: (k: KinsokuMode) => void;
+    /** v1.1: 升目デザイン — 升目 / 段罫のみ / 罫なし */
+    genkoStyle: GenkoStyle;
+    onGenkoStyle: (s: GenkoStyle) => void;
+    /** v1.1: 会話「」色分け — 画面のみ（印刷には出ない） */
+    dialogHl: boolean;
+    onDialogHl: (v: boolean) => void;
+    dialogColor: string;
+    onDialogColor: (c: string) => void;
+    /** v1.1: 升目の背景画像 — アプリ共通設定（IndexedDB。
+        書庫・Undo の対象外） */
+    bgImg: BgImgRec | null;
+    onBgImg: (rec: BgImgRec | null) => void;
     /** v0.5: 枠と字サイズを文書設定の升目仕様に合わせる */
     onFit400: () => void;
   };
@@ -871,6 +885,14 @@ export function DocProps({
   onCollapseNl,
   kinsoku,
   onKinsoku,
+  genkoStyle,
+  onGenkoStyle,
+  dialogHl,
+  onDialogHl,
+  dialogColor,
+  onDialogColor,
+  bgImg,
+  onBgImg,
   hanmenCells,
   fit400fs,
   onFit400,
@@ -917,12 +939,38 @@ export function DocProps({
   onCollapseNl: (on: boolean) => void;
   kinsoku: KinsokuMode;
   onKinsoku: (k: KinsokuMode) => void;
+  genkoStyle: GenkoStyle;
+  onGenkoStyle: (s: GenkoStyle) => void;
+  dialogHl: boolean;
+  onDialogHl: (v: boolean) => void;
+  dialogColor: string;
+  onDialogColor: (c: string) => void;
+  bgImg: BgImgRec | null;
+  onBgImg: (rec: BgImgRec | null) => void;
   hanmenCells: { v: number; h: number };
   fit400fs: number | null;
   onFit400: () => void;
   t: TFunc;
 }) {
   const [ins, setIns] = useState(1);
+  // v1.1: 升目背景画像のファイル選択（アプリ共通設定 — IndexedDB へ）
+  const bgFileRef = useRef<HTMLInputElement>(null);
+  const onPickBg = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.currentTarget.files?.[0];
+    e.currentTarget.value = '';
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () =>
+      onBgImg({
+        url: String(rd.result),
+        alpha: bgImg?.alpha ?? 0.25,
+        fit: bgImg?.fit ?? 'cover',
+        // 用紙への表示は従前の選択を引き継ぐ（新規は ON —
+        // 用紙全体へ敷き、升目枠内はマス背景で薄める）
+        paper: bgImg?.paper ?? true,
+      });
+    rd.readAsDataURL(f);
+  };
   // v0.5: 升目仕様入力 — 確定値のみ onGenko へ（入力途中の
   // 空欄・範囲外は無視して確定値へ戻す）。外部変更（書庫
   // 読込・Undo）へは props → state の同期で追従する
@@ -1210,6 +1258,34 @@ export function DocProps({
             <option value="burasage">{t('doc.kinsoku.hang')}</option>
           </select>
         </label>
+        {/* v1.1: 升目デザイン — 升目 / 段罫のみ / 罫なし */}
+        <label title={t('doc.genkoStyleTip')}>
+          {t('doc.genkoStyle')}
+          <select
+            value={genkoStyle}
+            onChange={(e) =>
+              onGenkoStyle(e.currentTarget.value as GenkoStyle)
+            }
+          >
+            <option value="masu">{t('doc.genkoStyle.masu')}</option>
+            <option value="tate">{t('doc.genkoStyle.tate')}</option>
+            <option value="none">{t('doc.genkoStyle.none')}</option>
+          </select>
+        </label>
+        {/* v1.1: 会話「」色分け — 画面のみ（印刷には出ない） */}
+        <label title={t('doc.dialogHlTip')}>
+          <input
+            type="checkbox"
+            checked={dialogHl}
+            onChange={(e) => onDialogHl(e.currentTarget.checked)}
+          />
+          {t('doc.dialogHl')}
+          <input
+            type="color"
+            value={dialogColor}
+            onChange={(e) => onDialogColor(e.currentTarget.value)}
+          />
+        </label>
         {/* v0.6: 升目線の色+透過 — キャンバス表示と印刷の両方へ適用 */}
         <div className="ins-row" title={t('doc.gridColorTip')}>
           {t('doc.gridColor')}
@@ -1279,6 +1355,84 @@ export function DocProps({
             onChange={(e) => onDocColor(e.currentTarget.value)}
           />
         </label>
+        {/* v1.1: アプリ共通設定 — 全書で共有（IndexedDB。
+            書庫・Undo の対象外であることを区切りで明示） */}
+        <div className="ins-app">
+          <div className="ins-app-head">{t('app.common')}</div>
+          <div className="ins-row">
+            {t('app.bgImg')}
+            <button onClick={() => bgFileRef.current?.click()}>
+              {bgImg?.url ? t('app.bgImgChange') : t('app.bgImgPick')}
+            </button>
+            {bgImg?.url && (
+              <button onClick={() => onBgImg(null)}>
+                {t('app.bgImgClear')}
+              </button>
+            )}
+            <input
+              ref={bgFileRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={onPickBg}
+            />
+          </div>
+          {bgImg?.url && (
+            <>
+              <img className="ins-bg-prev" src={bgImg.url} alt="" />
+              <div className="ins-row">
+                {t('doc.gridAlpha')}
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  style={{ width: 90 }}
+                  value={Math.round(bgImg.alpha * 100)}
+                  onChange={(e) =>
+                    onBgImg({
+                      ...bgImg,
+                      alpha: +e.currentTarget.value / 100,
+                    })
+                  }
+                />
+                {Math.round(bgImg.alpha * 100)}%
+              </div>
+              <div className="ins-row">
+                {t('app.bgFit')}
+                <select
+                  value={bgImg.fit}
+                  onChange={(e) =>
+                    onBgImg({
+                      ...bgImg,
+                      fit: e.currentTarget.value as BgImgRec['fit'],
+                    })
+                  }
+                >
+                  <option value="cover">{t('app.bgFit.cover')}</option>
+                  <option value="contain">{t('app.bgFit.contain')}</option>
+                  <option value="tile">{t('app.bgFit.tile')}</option>
+                </select>
+              </div>
+              {/* v1.1: 用紙に表示 — ON で用紙全体へ敷く（升目枠内は
+                  マスの背景色・透過で薄められる）。OFF では用紙の外
+                  （作業面）にだけ表示する */}
+              <label title={t('app.bgPaperTip')}>
+                <input
+                  type="checkbox"
+                  checked={bgImg.paper !== false}
+                  onChange={(e) =>
+                    onBgImg({
+                      ...bgImg,
+                      paper: e.currentTarget.checked,
+                    })
+                  }
+                />
+                {t('app.bgPaper')}
+              </label>
+            </>
+          )}
+          <div className="ins-app-note">{t('app.bgImgNote')}</div>
+        </div>
       </div>
       <footer className="hint">{t('doc.hint')}</footer>
     </div>

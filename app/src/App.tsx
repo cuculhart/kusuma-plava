@@ -50,12 +50,20 @@ import { Printout } from './Printout';
 import { Rulers } from './Rulers';
 import { makeT, tf, type Lang } from './i18n';
 import { ARCHIVE_EXT, packArchive, unpackArchive } from './docio';
-import { clearDraft, loadDraft, saveDraft } from './autosave';
+import {
+  clearDraft,
+  loadBgImg,
+  loadDraft,
+  saveBgImg,
+  saveDraft,
+  type BgImgRec,
+} from './autosave';
 import { b64ToU8, basename, isDesktop, kp, u8ToB64 } from './desktop';
 import { createCanvasMeasurer } from './measure';
 import { vunitSpans, type VStyle } from './vtrender';
 import { parseAozora, type AozoraResult } from './aozora';
 import {
+  DEFAULT_DIALOG_COLOR,
   DEFAULT_FONT_FAMILY,
   DEFAULT_GRID_BG,
   DEFAULT_GRID_COLOR,
@@ -71,6 +79,7 @@ import {
   TEXT_KIND,
   TEXT_PAD_MM,
   type GenkoGrid,
+  type GenkoStyle,
   type ImageData,
   type PageMargins,
   type TextAreaData,
@@ -104,6 +113,24 @@ function pageObjects(
     外接矩形として障害になる（輪郭追従はしない。v0.4 の割り切り）。
     他のテキストエリア・線/曲線・ページ枠は障害に含めない */
 const OBSTACLE_KINDS = new Set(['rect', 'ellipse', IMG_KIND]);
+
+/** v1.1: 「…」会話範囲の検出 — 最外の「」のみ（括弧含む）。
+    『』・入れ子「」は範囲内に残る（外側の色がそのまま掛かる）。
+    色分けは描画のみの装飾 — marks・印刷には触れない */
+const scanDialogRanges = (text: string): { s: number; e: number }[] => {
+  const out: { s: number; e: number }[] = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '「') {
+      if (depth++ === 0) start = i;
+    } else if (c === '」' && depth > 0) {
+      if (--depth === 0) out.push({ s: start, e: i + 1 });
+    }
+  }
+  return out;
+};
 
 /** テキストエリアと重なる障害矩形を、エリア内寸ローカル mm で返す。
     内寸 = オブジェクト矩形 − 四方 TEXT_PAD_MM（fitVertical に渡る箱と
@@ -636,6 +663,15 @@ export function App() {
   // v0.10: 空行を畳む — 文書設定。ソースの空行（\n\n 連続）を組版から
   // 除く（青空本文の見栄え用空行の抑制。既定OFF = 1空行=1空段の仕様）
   const [collapseNl, setCollapseNl] = useState(false);
+  // v1.1: 升目デザイン — 文書設定（doc.json の genkoStyle）。
+  // masu=升目（既定）/ tate=段罫のみ / none=罫なし
+  const [genkoStyle, setGenkoStyle] = useState<GenkoStyle>('masu');
+  // v1.1: 会話「」の色分け — 文書設定（画面のみ・印刷には出ない）
+  const [dialogHl, setDialogHl] = useState(false);
+  const [dialogColor, setDialogColor] = useState(DEFAULT_DIALOG_COLOR);
+  // v1.1: 升目の背景画像 — アプリ共通設定（IndexedDB。書庫・Undo
+  // の対象外 — .chkpf を膨らませない）
+  const [bgImg, setBgImg] = useState<BgImgRec | null>(null);
   // v0.12: 禁則処理 — 文書設定。'oidashi'=分割点前倒し（既定・升目原稿
   // 向き）/ 'burasage'=句読点を区間規定字に1字はみ出す（書籍組版向き）。
   // doc.json の kinsoku へ保存（文書ごとに切替可）
@@ -681,6 +717,9 @@ export function App() {
     collapseNl: boolean;
     kinsoku: KinsokuMode;
     goal: number;
+    genkoStyle: GenkoStyle;
+    dialogHl: boolean;
+    dialogColor: string;
   };
   const histRef = useRef<{ past: Snap[]; future: Snap[]; last: number }>({
     past: [],
@@ -1057,7 +1096,7 @@ export function App() {
       h: f.h,
       style: {
         stroke: 'rgba(90,110,140,0.4)',
-        fill: gridLineCss(gridBg, gridBgAlpha / 100),
+        fill: gridLineCss(gridBg, gridBgAlpha),
       },
       data: {
         ...DEFAULT_TEXT_DATA,
@@ -1250,6 +1289,9 @@ export function App() {
     collapseNl,
     kinsoku,
     goal,
+    genkoStyle,
+    dialogHl,
+    dialogColor,
   });
   const applySnap = (s: Snap) => {
     applyingRef.current = true;
@@ -1274,7 +1316,7 @@ export function App() {
                   ...(o.style ?? {}),
                   fill: gridLineCss(
                     s.gridBg ?? DEFAULT_GRID_BG,
-                    (s.gridBgAlpha ?? 0) / 100,
+                    s.gridBgAlpha ?? 0,
                   ),
                 },
               }
@@ -1302,6 +1344,9 @@ export function App() {
     setCollapseNl(s.collapseNl);
     setKinsoku(s.kinsoku);
     setGoal(s.goal);
+    setGenkoStyle(s.genkoStyle);
+    setDialogHl(s.dialogHl);
+    setDialogColor(s.dialogColor);
     snapRef.current = s;
     applyingRef.current = false;
   };
@@ -1343,7 +1388,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, kinsoku, goal]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, kinsoku, goal, genkoStyle, dialogHl, dialogColor]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -1395,6 +1440,9 @@ export function App() {
           collapseNl: false,
           kinsoku: 'oidashi' as const,
           goal: 0,
+          genkoStyle: 'masu' as const,
+          dialogHl: false,
+          dialogColor: DEFAULT_DIALOG_COLOR,
         };
         const cur = {
           spec: r.model.spec,
@@ -1419,6 +1467,9 @@ export function App() {
           collapseNl: r.collapseNl,
           kinsoku: r.kinsoku,
           goal: r.goal,
+          genkoStyle: r.genkoStyle,
+          dialogHl: r.dialogHl,
+          dialogColor: r.dialogColor,
         };
         if (JSON.stringify(blank) === JSON.stringify(cur)) return;
         applyArchive(r);
@@ -1464,6 +1515,9 @@ export function App() {
           collapseNl,
           kinsoku,
           goal,
+          genkoStyle,
+          dialogHl,
+          dialogColor,
         });
         const fp = docFp(createdAtRef.current, docTitle);
         void saveDraft(u8, fp).then((at) => {
@@ -1476,7 +1530,7 @@ export function App() {
     }, 1500);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, kinsoku, goal]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, kinsoku, goal, genkoStyle, dialogHl, dialogColor]);
 
   // v0.7: 執筆モードのホイール = ページめくり — ページビューア化で
   // 可変ズームと自由パンを廃止したため、ホイール送りは現ページ±1へ
@@ -1561,10 +1615,33 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // v1.1: 升目の背景画像 — アプリ共通設定を起動時に IndexedDB
+  // から復元（下書き復元とは独立。画像が無い環境では null のまま）
+  useEffect(() => {
+    let alive = true;
+    void loadBgImg().then((rec) => {
+      if (alive && rec?.url) setBgImg(rec);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  // 透過率スライダーの連打で dataURL ごと毎回書くと重いため
+  // 保存はデバウンス（反映自体は state 更新で即時）
+  const bgSaveRef = useRef(0);
+  const applyBgImg = (rec: BgImgRec | null) => {
+    setBgImg(rec);
+    window.clearTimeout(bgSaveRef.current);
+    bgSaveRef.current = window.setTimeout(
+      () => void saveBgImg(rec),
+      400,
+    );
+  };
+
   // v0.9: 升目マスの背景色 → 升目枠オブジェクトの fill を即時反映
   // （data.genko を持つ枠のみ。手動で色を変えた枠も文書設定へ戻る）
   useEffect(() => {
-    const fill = gridLineCss(gridBg, gridBgAlpha / 100);
+    const fill = gridLineCss(gridBg, gridBgAlpha);
     engine.setDoc({
       ...engine.doc,
       objects: engine.doc.objects.map((o) => {
@@ -1619,6 +1696,9 @@ export function App() {
     setMargins({ ...DEFAULT_MARGINS });
     setCollapseNl(false);
     setKinsoku('oidashi');
+    setGenkoStyle('masu');
+    setDialogHl(false);
+    setDialogColor(DEFAULT_DIALOG_COLOR);
     createdAtRef.current = new Date().toISOString();
     // v0.11: 文書が切り替わった時点で fp を更新 — 旧文書の
     // 下書きが残っていても次回起動で誤復元しない
@@ -1654,6 +1734,9 @@ export function App() {
       collapseNl,
       kinsoku,
       goal,
+      genkoStyle,
+      dialogHl,
+      dialogColor,
     });
   const confirmSave = (name: string) => {
     const u8 = packCurrent();
@@ -1717,7 +1800,7 @@ export function App() {
                 ...(o.style ?? {}),
                 fill: gridLineCss(
                   r.gridBg ?? DEFAULT_GRID_BG,
-                  (r.gridBgAlpha ?? 0) / 100,
+                  r.gridBgAlpha ?? 0,
                 ),
               },
             }
@@ -1750,6 +1833,9 @@ export function App() {
     setCollapseNl(r.collapseNl === true);
     setKinsoku(r.kinsoku);
     setGoal(r.goal);
+    setGenkoStyle(r.genkoStyle);
+    setDialogHl(r.dialogHl);
+    setDialogColor(r.dialogColor);
     createdAtRef.current = r.createdAt || new Date().toISOString();
     // v0.11: 下書き fingerprint を開いた文書へ更新（下書き復元
     // 経路でも同一 fp になるため二重書きは害なし）
@@ -2424,7 +2510,7 @@ export function App() {
             h: pr.h - ni.t - ni.b,
             style: {
               stroke: 'rgba(90,110,140,0.4)',
-              fill: gridLineCss(gridBg, gridBgAlpha / 100),
+              fill: gridLineCss(gridBg, gridBgAlpha),
             },
             data: {
               ...DEFAULT_TEXT_DATA,
@@ -4322,12 +4408,33 @@ export function App() {
     return out;
   })();
 
+  // v1.1: 用紙に表示 — ON(欠落): 頁全体へ敷く（升目枠内は枠 fill
+  // =マスの背景色・透過がベールとして重なり、文書設定だけで
+  // さらに薄められる）/ OFF: 用紙の外（作業面 .canvas-wrap の
+  // 最背面）にだけ敷く。旧レコードの scope 値は読み捨て
+  const bgOnPaper = bgImg?.paper !== false;
+  const bgCss: React.CSSProperties | undefined = bgImg?.url
+    ? {
+        backgroundImage: `url("${bgImg.url}")`,
+        opacity: bgImg.alpha,
+        backgroundSize: bgImg.fit === 'tile' ? 'auto' : bgImg.fit,
+        backgroundRepeat: bgImg.fit === 'tile' ? 'repeat' : 'no-repeat',
+        backgroundPosition: 'center',
+      }
+    : undefined;
+
   const renderObject = (o: WorldObject) => {
     if (o.kind === PAGE_KIND) {
       const d = o.data as { index: number };
       const hs = hashiraAt(d.index);
       return (
         <>
+        {/* v1.1: 用紙に表示 — 頁全面へ画像を敷く。升目枠の内側は
+            枠 fill（マスの背景色×透過）がベールとして重なり、
+            文書設定側で見え方を調整できる */}
+        {bgCss && bgOnPaper && (
+          <div className="g-bg" style={bgCss} />
+        )}
         <div
           className={d.index === curPage ? 'page-tag active nodrag' : 'page-tag nodrag'}
           onPointerDown={(e) => e.stopPropagation()}
@@ -4444,7 +4551,11 @@ export function App() {
             fontSize: (a?.fontSize ?? d.fontSize) * MM_PX * z,
             fontFamily: a?.fontFamily,
             // リンクは編集画面では遷移させず色+下線で表現
-            color: a?.link ? '#1a56c4' : a?.color,
+            color: a?.link
+              ? '#1a56c4'
+              : inDlg(p, 1)
+                ? dialogColor
+                : a?.color,
             fontWeight: a?.bold ? 'bold' : undefined,
             fontStyle: a?.italic ? 'italic' : undefined,
             textDecoration: a?.bosen
@@ -4463,6 +4574,24 @@ export function App() {
           title: a?.link,
         };
       };
+      // v1.1: 会話「」色分け — スライス内の「…」範囲（最外のみ）。
+      // 描画のみの装飾で marks・印刷には触れない
+      const dlgRanges = dialogHl
+        ? scanDialogRanges(sl?.text ?? '')
+        : null;
+      const inDlg = (p: number, len: number) =>
+        dlgRanges != null &&
+        dlgRanges.some((g) => p < g.e && p + len > g.s);
+      // 横書きパスはラン列に位置が無いため累積で各ランの範囲を作る
+      const dlgHits = (() => {
+        if (!dlgRanges) return null;
+        let p = 0;
+        return runs.map((r) => {
+          const hit = inDlg(p, r.text.length);
+          p += r.text.length;
+          return hit;
+        });
+      })();
       const alignStyle = alone
         ? {
             textAlign: d.halign,
@@ -4491,8 +4620,19 @@ export function App() {
             textDecoration: d.underline ? 'underline' : undefined,
           }}
         >
+          {/* v1.1: 升目の背景画像は頁側（用紙に表示）または
+              作業面側へ敷く — 升目枠内に専用層は置かない。
+              頁に敷いた画像は枠 fill（マスの背景色×透過）の
+              ベール越しに見えるため、文書設定だけで薄められる。
+              印刷は Printout が別ツリーのため出ない */}
           <div
-            className={vertical ? 'ta-slice vt' : 'ta-slice'}
+            className={
+              vertical
+                ? `ta-slice vt${
+                    genkoStyle === 'masu' ? '' : ` gt-${genkoStyle}`
+                  }`
+                : 'ta-slice'
+            }
             style={
               vertical
                 ? ({
@@ -4549,7 +4689,11 @@ export function App() {
                       fontSize: r.attrs.fontSize! * MM_PX * z,
                       fontFamily: r.attrs.fontFamily,
                       // リンクは編集画面では遷移させず色+下線で表現
-                      color: r.attrs.link ? '#1a56c4' : r.attrs.color,
+                      color: r.attrs.link
+                        ? '#1a56c4'
+                        : dlgHits?.[i]
+                          ? dialogColor
+                          : r.attrs.color,
                       fontWeight: r.attrs.bold ? 'bold' : undefined,
                       fontStyle: r.attrs.italic ? 'italic' : undefined,
                       textDecoration: r.attrs.bosen
@@ -4620,6 +4764,89 @@ export function App() {
     localStorage.setItem('kusuma-theme', t);
   };
 
+  // v1.1: 現ページをPNGでクリップボードへ — デスクトップ版のみ。
+  // 全面を capturePage し、頁 ki-obj の DOM 実測矩形で crop する
+  // （rect 引数は zoomFactor/HiDPI で領域がずれる既知のquirksを
+  // 避けるため。升目・背景画像を含む見たまま。SNS 共有の最短導線）
+  const copyPagePng = async (): Promise<void> => {
+    if (!kp?.capturePage) return;
+    const pageObj = engine.doc.objects.find(
+      (o) =>
+        o.kind === PAGE_KIND &&
+        (o.data as { index?: number }).index === curPage,
+    );
+    const el = pageObj
+      ? canvasRef.current?.querySelector(
+          `[data-ki-obj="${pageObj.id}"]`,
+        )
+      : null;
+    const dom = el?.getBoundingClientRect();
+    if (!dom) return;
+    // 浮動UI（頁ナビ・レール・ハンドル等）を撮影中だけ隠す —
+    // 頁に被さっていても写り込まない
+    const wrap = canvasRef.current;
+    wrap?.classList.add('capturing');
+    await new Promise((r) =>
+      requestAnimationFrame(() => requestAnimationFrame(r)),
+    );
+    let b64: string | null = null;
+    try {
+      b64 = await kp.capturePage();
+    } finally {
+      wrap?.classList.remove('capturing');
+    }
+    if (!b64) return;
+    const img = await new Promise<HTMLImageElement | null>((res) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => res(null);
+      i.src = `data:image/png;base64,${b64}`;
+    });
+    if (!img) return;
+    // PNG の物理px / 画面CSS px の比率を実測 — HiDPI・webContents
+    // zoom の影響をそのまま吸収する
+    const sc = img.naturalWidth / window.innerWidth;
+    const c = document.createElement('canvas');
+    // ±1/−2: .ki-obj の1px罫線（border-box 内側）を外す
+    const sx = (dom.left + 1) * sc;
+    const sy = (dom.top + 1) * sc;
+    c.width = Math.max(1, Math.round((dom.width - 2) * sc));
+    c.height = Math.max(1, Math.round((dom.height - 2) * sc));
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    // 頁が画面外へはみ出している場合 — ソース矩形を画像内へ
+    // クランプし、はみ出し分は透明のまま残す
+    const sxi = Math.max(0, Math.round(sx));
+    const syi = Math.max(0, Math.round(sy));
+    const sw = Math.max(
+      0,
+      Math.min(Math.round(sx) + c.width, img.naturalWidth) - sxi,
+    );
+    const sh = Math.max(
+      0,
+      Math.min(Math.round(sy) + c.height, img.naturalHeight) - syi,
+    );
+    if (!sw || !sh) return;
+    ctx.drawImage(img, sxi, syi, sw, sh, sxi - sx, syi - sy, sw, sh);
+    const blob = await new Promise<Blob | null>((res) =>
+      c.toBlob(res, 'image/png'),
+    );
+    if (!blob) return;
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': blob }),
+      ]);
+    } catch {
+      // クリップボード権限が無い環境は PNG ダウンロードへ退く
+      const url = URL.createObjectURL(blob);
+      const el = document.createElement('a');
+      el.href = url;
+      el.download = `${docTitle || 'page'}-p${curPage + 1}.png`;
+      el.click();
+      URL.revokeObjectURL(url);
+    }
+  };
+
   // v0.11: 文書設定プロップス — RightDock と右側フロートパネルの
   // 両方から参照するため定数化（パネルは右端レールから開く）
   const docPropsObj = {
@@ -4664,6 +4891,14 @@ export function App() {
     onCollapseNl: setCollapseNl,
     kinsoku,
     onKinsoku: setKinsoku,
+    genkoStyle,
+    onGenkoStyle: setGenkoStyle,
+    dialogHl,
+    onDialogHl: setDialogHl,
+    dialogColor,
+    onDialogColor: setDialogColor,
+    bgImg,
+    onBgImg: applyBgImg,
     hanmenCells,
     fit400fs: cellArea ? fit400fs : null,
     onFit400: fit400,
@@ -4715,6 +4950,9 @@ export function App() {
           onAddPage={appendPage}
           onDeletePage={removeCurrentPage}
           onPrint={() => setPrinting(true)}
+          onCopyPng={
+            kp?.capturePage ? () => void copyPagePng() : undefined
+          }
           theme={theme}
           onTheme={onTheme}
           onLang={() => {
@@ -4734,6 +4972,7 @@ export function App() {
           ref={canvasRef}
           className={
             'canvas-wrap' +
+            (bgCss && !bgOnPaper ? ' has-gbg' : '') +
             (linkMode ? ' link-mode' : '') +
             (shapeTool ? ' drawing' : '')
           }
@@ -4835,6 +5074,13 @@ export function App() {
             setCtxMenu({ x: e.clientX, y: e.clientY });
           }}
         >
+          {/* v1.1: 用紙に表示 OFF — 画像を作業面の最背面へ敷く
+              （.ki-canvas を has-gbg で透明化し、頁オブジェクトの
+              塗りで覆われた部分だけが隠れる＝用紙の外にだけ見える）。
+              ビューポート固定の装飾 — パン/ズームには追従しない */}
+          {bgCss && !bgOnPaper && (
+            <div className="g-bg g-canvas" style={bgCss} />
+          )}
           <IsleCanvas
             engine={engine}
             style={{ position: 'absolute', inset: 0 }}
@@ -5331,6 +5577,7 @@ export function App() {
           gridPrint={gridPrint}
           gridColor={gridColor}
           gridAlpha={gridAlpha}
+          genkoStyle={genkoStyle}
           hashiraFor={hashiraAt}
           hashiraRect={hashiraRect}
           hashiraFont={docFont}

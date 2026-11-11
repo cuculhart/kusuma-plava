@@ -42,5 +42,11 @@ contextBridge.exposeInMainWorld('kusumaPlava', {
   // in newer Electron - webUtils is the supported API)
   pathForFile: (file) => webUtils.getPathForFile(file),
 
+  // Page screenshot for SNS sharing - captures the whole viewport
+  // and returns PNG as base64. The renderer crops the page rect
+  // itself (DOM-measured bounds x naturalWidth/innerWidth — safe
+  // against zoomFactor and HiDPI quirks in capturePage's rect arg)
+  capturePage: () => ipcRenderer.invoke('kp:capture-page'),
+
   platform: process.platform,
 })

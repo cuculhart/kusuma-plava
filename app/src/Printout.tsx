@@ -44,6 +44,7 @@ export function Printout({
   gridPrint,
   gridColor,
   gridAlpha,
+  genkoStyle,
   hashiraFor,
   hashiraRect,
   hashiraFont,
@@ -66,6 +67,8 @@ export function Printout({
   /** v0.6: 升目線の色（#rrggbb）と濃さ 0〜1 — 文書設定 */
   gridColor: string;
   gridAlpha: number;
+  /** v1.1: 升目デザイン — masu / tate（段罫のみ）/ none（罫なし） */
+  genkoStyle: 'masu' | 'tate' | 'none';
   /** v0.7: 柱 — 天余白へ出す走り書き（空=出さない）。矩形は文書設定の
       升目仕様から App 側で計算済みのページローカル mm、書体は文書既定。
       v0.11: 章ごと版 — 頁 index → 柱文字列の resolver（章境界のある
@@ -309,7 +312,11 @@ export function Printout({
                     key={o.id}
                     className={
                       vertical
-                        ? `parea vt${gridPrint ? '' : ' nogrid'}`
+                        ? `parea vt${gridPrint ? '' : ' nogrid'}${
+                            genkoStyle === 'masu'
+                              ? ''
+                              : ` gt-${genkoStyle}`
+                          }`
                         : 'parea'
                     }
                     style={{

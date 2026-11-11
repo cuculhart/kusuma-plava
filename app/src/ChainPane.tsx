@@ -272,6 +272,43 @@ export function ChainPane({
     el?.focus();
   };
 
+  // v1.1: 装飾注記の挿入 — 選択を青空注記で包む。通常は前方参照型
+  // （［＃「…」に傍点］）。選択が改行・］・ルビ記号を含むと前方
+  // 参照が成立しないため、傍線/太字/斜体は開始/終了型へ退く
+  // （傍点・見出しは開始/終了型が無いので対象外）。
+  // 注記は parseAozora が mark 化するため、組版・投稿用テキスト
+  // 出力ともにそのまま往復する
+  const DECO_MENU = [
+    { fix: 'に傍点', label: '傍点' },
+    { fix: 'に傍線', label: '傍線', span: '傍線' },
+    { fix: 'は太字', label: '太字', span: '太字' },
+    { fix: 'は斜体', label: '斜体', span: '斜体' },
+    { fix: 'は中見出し', label: '中見出し' },
+  ] as const;
+  const [decoOpen, setDecoOpen] = useState(false);
+  const selTxt = hasSel ? chain.text.slice(sel.s, sel.e) : '';
+  // 前方参照型が安全に使えるか — 「」自体は貪欲一致で耐えるが
+  // ］は注記を切断し、《》｜はルビ変換で照合が外れる
+  const decoFwdOk = !/[\n］《》｜]/.test(selTxt);
+  const wrapNote = (fix: string, span?: string) => {
+    const el = taRef.current;
+    const s = el ? el.selectionStart : chain.text.length;
+    const e = el ? el.selectionEnd : s;
+    const sel = chain.text.slice(s, e);
+    if (!sel) return;
+    const fwd = !/[\n］《》｜]/.test(sel);
+    if (fwd) {
+      const ins = `${sel}［＃「${sel}」${fix}］`;
+      pendingCaret.current = s + ins.length;
+      onText(chain.text.slice(0, s) + ins + chain.text.slice(e));
+    } else if (span) {
+      const ins = `［＃${span}］${sel}［＃${span}終わり］`;
+      pendingCaret.current = s + ins.length;
+      onText(chain.text.slice(0, s) + ins + chain.text.slice(e));
+    }
+    el?.focus();
+  };
+
   // ── v0.3: 検索・置換 — アクティブ連鎖のテキストだけを対象にする
   // （textarea 文字列操作の範囲。キャンバスは再レイアウトで自動追従） ──
   const [findOpen, setFindOpen] = useState(false);
@@ -574,6 +611,32 @@ export function ChainPane({
         <button title={t('write.rubyTip')} onClick={insertRuby}>
           《
         </button>
+        {/* v1.1: 装飾注記パレット — 選択範囲を青空注記で包む */}
+        <span className="deco-wrap">
+          <button
+            title={t('write.decoTip')}
+            disabled={!hasSel}
+            onClick={() => setDecoOpen((v) => !v)}
+          >
+            飾
+          </button>
+          {decoOpen && (
+            <span className="deco-menu">
+              {DECO_MENU.map((d) => (
+                <button
+                  key={d.fix}
+                  disabled={!decoFwdOk && !('span' in d)}
+                  onClick={() => {
+                    wrapNote(d.fix, 'span' in d ? d.span : undefined);
+                    setDecoOpen(false);
+                  }}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </span>
+          )}
+        </span>
         {/* ビュー⇄テキストのシンクボタン（執筆モード） */}
         {onCaret && (
           <button

@@ -32,6 +32,11 @@ export interface KpApi {
   takePendingFile: () => Promise<string | null>;
   onOpenPath: (cb: (path: string) => void) => () => void;
   pathForFile: (file: File) => string;
+  /** v1.1: ビューポート全面を PNG 化 — 現ページの SNS 共有
+      コピー用。切り出しはレンダラ側で行う（rect 引数は
+      zoomFactor/HiDPI で領域がずれる既知のquirksを避ける）。
+      戻りは base64（失敗時 null） */
+  capturePage: () => Promise<string | null>;
   platform: string;
 }
 

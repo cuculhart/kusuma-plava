@@ -113,6 +113,8 @@ const ja = {
   'write.goalSheetsTip': '400字詰換算の枚数でも設定できる',
   'write.goalTip': '現在 / 目標の進捗',
   'write.progress': '$1 / $2字（$3/$4枚）',
+  'write.decoTip':
+    '選択範囲を装飾注記で包む（傍点・傍線・太字・斜体・中見出し）',
   // 検索・置換（v0.3）
   'find.open': '検索・置換（Ctrl+F）',
   'find.placeholder': '検索…',
@@ -196,6 +198,29 @@ const ja = {
   'doc.kinsoku.hang': 'ぶら下げ',
   'doc.kinsokuTip':
     '段末の禁則処理の選び方 — 追い出し: 句読点などを次の段頭へ送って升目に収める（升目原稿向き）/ ぶら下げ: 句読点を段の規定字に1字はみ出して段末を揃える（書籍組版向き）',
+  'doc.genkoStyle': '升目の罫',
+  'doc.genkoStyle.masu': '升目',
+  'doc.genkoStyle.tate': '段罫のみ',
+  'doc.genkoStyle.none': '罫なし',
+  'doc.genkoStyleTip':
+    '原稿用紙の罫線デザイン — 段罫のみ: 字ごとの横線を抜き段の区切りだけ残す / 罫なし: 升目線を消す（印刷にも適用）',
+  'doc.dialogHl': '会話「」を色分け',
+  'doc.dialogHlTip':
+    '「…」で括られた会話部分を指定色で表示します（執筆中の見やすさ用 — 印刷には出ません）',
+  'app.common': 'アプリ共通（全書で共有）',
+  'app.bgImg': '升目の背景画像',
+  'app.bgImgPick': '画像を選ぶ…',
+  'app.bgImgChange': '変更…',
+  'app.bgImgClear': '消去',
+  'app.bgFit': '表示',
+  'app.bgFit.cover': '全面',
+  'app.bgFit.contain': '収める',
+  'app.bgFit.tile': '並べる',
+  'app.bgPaper': '用紙に表示',
+  'app.bgPaperTip':
+    'ON：用紙全体へ画像を表示（升目枠の内側はマスの背景色・透過でさらに薄められます）/ OFF：用紙の外（作業面）にだけ表示',
+  'app.bgImgNote':
+    '背景画像はこのアプリのすべての文書で共有され、印刷には出ません。スクリーンショットをSNS等へ投稿する際は、使用する画像の著作権・利用規約にご注意ください',
   'chain.outline': '話区切り・見出し',
   'doc.opacity': '用紙の透過',
   'doc.hint': '未選択 / 複数選択 — オブジェクトを選ぶとプロパティが出ます',
@@ -249,6 +274,8 @@ const ja = {
   'nav.last': '最終ページ',
   'nav.chapter': '章の先頭ページへジャンプ',
   'nav.chapterPh': '章…',
+  'nav.copyPng': 'このページをPNGでコピー',
+  'menu.copyPng': '頁をPNGコピー',
   'side.nav': 'ページナビ',
   'side.chap': '章ジャンプ',
   'side.doc': '文書設定',
@@ -391,6 +418,8 @@ const en: Record<keyof typeof ja, string> = {
   'write.goalSheetsTip': 'Can also be set as sheets (400 chars each)',
   'write.goalTip': 'Current / target progress',
   'write.progress': '$1 / $2 chars ($3/$4 sheets)',
+  'write.decoTip':
+    'Wrap the selection in a decoration note (boten, bosen, bold, italic, heading)',
   'find.open': 'Find & replace (Ctrl+F)',
   'find.placeholder': 'Find…',
   'find.replace': 'Replace…',
@@ -472,6 +501,29 @@ const en: Record<keyof typeof ja, string> = {
   'doc.kinsoku.hang': 'Hanging (burasage)',
   'doc.kinsokuTip':
     'Kinsoku handling at column ends — push-out sends punctuation to the next column to stay inside the grid (manuscript style); hanging lets punctuation overhang the column edge by one char for even column ends (book style)',
+  'doc.genkoStyle': 'Grid rules',
+  'doc.genkoStyle.masu': 'Cells',
+  'doc.genkoStyle.tate': 'Column rules',
+  'doc.genkoStyle.none': 'None',
+  'doc.genkoStyleTip':
+    'Manuscript grid design — column rules keeps only the column separators (drops per-char lines); none hides the grid entirely (also affects printing)',
+  'doc.dialogHl': 'Highlight dialogue',
+  'doc.dialogHlTip':
+    'Colors text inside 「…」 quotes with the chosen color (writing aid — not printed)',
+  'app.common': 'App settings (shared)',
+  'app.bgImg': 'Grid background image',
+  'app.bgImgPick': 'Choose image…',
+  'app.bgImgChange': 'Change…',
+  'app.bgImgClear': 'Clear',
+  'app.bgFit': 'Fit',
+  'app.bgFit.cover': 'Cover',
+  'app.bgFit.contain': 'Contain',
+  'app.bgFit.tile': 'Tile',
+  'app.bgPaper': 'Show on paper',
+  'app.bgPaperTip':
+    'On: image covers the whole paper (the cell background color/opacity veils it inside the grid) / Off: image shows only on the workspace around the paper',
+  'app.bgImgNote':
+    'The background image is shared across all documents of this app and is never printed. When posting screenshots to social media, please respect the copyright and terms of the images you use',
   'chain.outline': 'Scene breaks & headings',
   'doc.opacity': 'Paper opacity',
   'doc.hint': 'Nothing / multiple selected — select an object for properties',
@@ -525,6 +577,8 @@ const en: Record<keyof typeof ja, string> = {
   'nav.last': 'Last page',
   'nav.chapter': 'Jump to chapter start',
   'nav.chapterPh': 'Ch…',
+  'nav.copyPng': 'Copy this page as PNG',
+  'menu.copyPng': 'Copy page PNG',
   'side.nav': 'Page navigation',
   'side.chap': 'Chapters',
   'side.doc': 'Document settings',

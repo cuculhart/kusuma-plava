@@ -2,7 +2,7 @@
   "name": "kusuma-plava",
   "productName": "Kusuma Plava",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Kusuma Plava desktop shell (Electron) — renderer is app/ built by Vite",
   "author": "cuculhart",
   "license": "MIT",

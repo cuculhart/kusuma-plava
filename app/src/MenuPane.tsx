@@ -41,6 +41,7 @@ export function MenuPane({
   onAddPage,
   onDeletePage,
   onPrint,
+  onCopyPng,
   theme,
   onTheme,
   onLang,
@@ -82,6 +83,8 @@ export function MenuPane({
   onAddPage: () => void;
   onDeletePage: () => void;
   onPrint: () => void;
+  /** v1.1: 現ページをPNGでコピー（デスクトップのみ — 未指定なら非表示） */
+  onCopyPng?: () => void;
   theme: Theme;
   onTheme: (t: Theme) => void;
   onLang: () => void;
@@ -213,6 +216,13 @@ export function MenuPane({
         </>
       )}
       {item('印', t('menu.print'), onPrint, { enIc: '⎙' })}
+      {/* v1.1: 頁のPNGコピーはメニュー側へ — キャンバス上の
+          浮動UIに置くと撮影対象へ写り込むため（デスクトップのみ） */}
+      {onCopyPng &&
+        item('写', t('menu.copyPng'), onCopyPng, {
+          title: t('nav.copyPng'),
+          enIc: '⧉',
+        })}
       <div className="m-sep" />
       {collapsed ? (
         item('題', t('menu.theme'), () => onTheme(nextTheme.value), {

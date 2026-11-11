@@ -430,6 +430,73 @@ body,
   background-image: none;
 }
 
+/* v1.1: 升目デザインの着せ替え（文書設定 genkoStyle） —
+   tate=段罫のみ（字ごとの横線を抜き段の区切りだけ残す）/
+   none=罫なし。キャンバス・印刷の両方へ適用 */
+.ta-slice.vt.gt-tate,
+.parea.vt.gt-tate {
+  background-image:
+    repeating-linear-gradient(
+      to left,
+      var(--grid-line) 0,
+      var(--grid-line) 1px,
+      transparent 1px,
+      transparent var(--pitch)
+    );
+}
+.ta-slice.vt.gt-none,
+.parea.vt.gt-none {
+  background-image: none;
+}
+
+/* v1.1: 升目の背景画像（アプリ共通設定）— 装飾層。
+   .g-bg = 画像層（「用紙に表示」ON は頁の .ki-obj 内＝頁全面、
+   OFF は .canvas-wrap 内＝作業面）。直近の位置指定祖先へ
+   全面に敷く。印刷は Printout が別ツリーのため出ないが、
+   念のため @media print でも抑止 */
+.g-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+/* 作業面モード: 頁オブジェクトの下へ画像層を通すため
+   .ki-canvas の不透明な背景色だけを外す（方眼の
+   background-image は残る — 組版モードでは画像の上に
+   方眼が重なる）*/
+.canvas-wrap.has-gbg .ki-canvas {
+  background-color: transparent;
+}
+@media print {
+  .g-bg {
+    display: none !important;
+  }
+}
+
+/* v1.1: 頁のPNG撮影中はキャンバス上の浮動UIを隠す —
+   頁ナビ・レール・ハンドル・ワイヤー類が撮影領域へ写り込むのを防ぐ
+   （visibility でレイアウトを動かさない） */
+.canvas-wrap.capturing .page-nav,
+.canvas-wrap.capturing .side-rail,
+.canvas-wrap.capturing .side-panel,
+.canvas-wrap.capturing .scroll-nav,
+.canvas-wrap.capturing .canvas-hint,
+.canvas-wrap.capturing .img-ghost,
+.canvas-wrap.capturing .shape-overlay,
+.canvas-wrap.capturing .shape-preview,
+.canvas-wrap.capturing .page-tag,
+.canvas-wrap.capturing .ki-handle,
+.canvas-wrap.capturing .ki-rot,
+.canvas-wrap.capturing .ki-bend,
+.canvas-wrap.capturing .ki-vtxs,
+.canvas-wrap.capturing .ki-ports,
+.canvas-wrap.capturing .ki-guide,
+.canvas-wrap.capturing .ki-hud,
+.canvas-wrap.capturing .ki-marquee,
+.canvas-wrap.capturing .ki-edges,
+.canvas-wrap.capturing .wires {
+  visibility: hidden !important;
+}
+
 /* ルビのヨミ — 主線より小さく（段のルビ欄に載る想定）。
    .vr 内ではネイティブの <rt> 組版は使わず下の .vr rt でルビ欄へ
    絶対配置する（親字+注釈のペア重心合わせで親字が升目からずれ、
@@ -1755,4 +1822,57 @@ body,
    400px 指定が collapsed の 24px を詳細度で上回るため明示 */
 .app.mode-write .right-dock.collapsed {
   width: 24px;
+}
+
+/* v1.1: 文書設定パネルの「アプリ共通」区切り — 文書設定と
+   混ざらないよう上ボーダー＋見出しで分離する */
+.ins-app {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+.ins-app-head {
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.ins-app-note {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin-top: 4px;
+}
+.ins-bg-prev {
+  display: block;
+  max-width: 100%;
+  max-height: 48px;
+  border-radius: 3px;
+  margin: 4px 0;
+  opacity: 0.9;
+}
+
+/* v1.1: 装飾注記パレット（連鎖ペイン）— 「飾」ボタンの上に
+   開く小メニュー。注記名はそのままボタンラベル */
+.deco-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.deco-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px;
+  z-index: 30;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+.deco-menu button {
+  white-space: nowrap;
+  text-align: left;
+  font-size: 11px;
 }

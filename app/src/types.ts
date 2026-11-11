@@ -124,6 +124,13 @@ export const DEFAULT_GRID_BG = '#ffffff';
 export const GRID_CELL_ALPHA = 0.45;
 export const GRID_LANE_ALPHA = 0.18;
 
+/** v1.1: 升目デザイン — masu=升目（既定）/ tate=段罫のみ
+    （字の横線を抜く）/ none=罫なし */
+export type GenkoStyle = 'masu' | 'tate' | 'none';
+
+/** v1.1: 会話「」色分けの既定色 — 白い紙でも暗い紙でも読める中間の水色 */
+export const DEFAULT_DIALOG_COLOR = '#0f8f7a';
+
 /** 文書設定の升目線色+濃さ → CSS 変数（--grid-line/--lane-line）用の
     rgba() 文字列。color が #rrggbb と解釈できない値は既定色へ畳む */
 export function gridLineCss(color: string, alpha: number): string {
