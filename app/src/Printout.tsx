@@ -17,6 +17,8 @@ import {
   type VUnit,
 } from 'inimbal';
 import {
+  botenCss,
+  botenRt,
   DEFAULT_TEXT_DATA,
   GRID_CELL_ALPHA,
   GRID_LANE_ALPHA,
@@ -299,9 +301,10 @@ export function Printout({
                           ? 'underline'
                           : undefined,
                       textUnderlinePosition: a?.bosen ? 'right' : undefined,
-                      textEmphasis: a?.boten ? 'sesame' : undefined,
+                      textEmphasis: botenCss(a?.boten),
                     },
-                    boten: a?.boten,
+                    boten: botenRt(a?.boten),
+                    kei: a?.kei,
                     // 印刷は <a> で出す → PDF 書き出しでリンクが生きる
                     link: a?.link,
                     title: a?.link,
@@ -405,8 +408,10 @@ export function Printout({
                               : r.attrs.underline || r.attrs.link
                                 ? 'underline'
                                 : undefined,
-                            textEmphasis: r.attrs.boten
-                              ? 'sesame'
+                            textEmphasis: botenCss(r.attrs.boten),
+                            // v1.2: 罫囲み — ランごとの枠
+                            boxShadow: r.attrs.kei
+                              ? '0 0 0 1px'
                               : undefined,
                           }}
                         >

@@ -47,6 +47,9 @@ export interface ImageData {
       指定が無いためブロック扱い — テキストは画像の縦帯を全幅で
       よける。アプリで差し込んだ画像は false/未設定で回り込む） */
   noWrap?: boolean;
+  /** v1.2: キャプション欄 — メモとして doc へ保持するだけ
+      （レンダリングはしない。将来の組版へ繋ぐ下地） */
+  caption?: string;
 }
 
 /** テキストエリアの内側パディング（mm）— 計測・描画で共用 */
@@ -130,6 +133,25 @@ export type GenkoStyle = 'masu' | 'tate' | 'none';
 
 /** v1.1: 会話「」色分けの既定色 — 白い紙でも暗い紙でも読める中間の水色 */
 export const DEFAULT_DIALOG_COLOR = '#0f8f7a';
+
+/** v1.2: 傍点の種別 — TextAttrs.boten は CSS text-emphasis 値
+    （true = 旧マーク互換の既定 sesame）。縦組はよみがな扱いで
+    ルビ欄へ字形を出すため対応表が要る */
+export const BOTEN_RT: Record<string, string> = {
+  sesame: '・', // 傍点・黒ゴマ（既定）
+  'open sesame': '◦', // 白ゴマ
+  'filled circle': '●', // 黒丸
+  'open circle': '○', // 白丸
+  'open double-circle': '◎', // 二重丸
+  'filled double-circle': '◉', // 蛇の目
+  "'×'": '×', // ばってん
+};
+/** TextAttrs.boten → CSS text-emphasis 値（横組・印刷用） */
+export const botenCss = (b?: true | string): string | undefined =>
+  b === true ? 'sesame' : b || undefined;
+/** TextAttrs.boten → 縦組のルビ欄へ出す字形 */
+export const botenRt = (b?: true | string): string | undefined =>
+  b ? (BOTEN_RT[b === true ? 'sesame' : b] ?? '・') : undefined;
 
 /** 文書設定の升目線色+濃さ → CSS 変数（--grid-line/--lane-line）用の
     rgba() 文字列。color が #rrggbb と解釈できない値は既定色へ畳む */

@@ -63,6 +63,8 @@ import { createCanvasMeasurer } from './measure';
 import { vunitSpans, type VStyle } from './vtrender';
 import { parseAozora, type AozoraResult } from './aozora';
 import {
+  botenCss,
+  botenRt,
   DEFAULT_DIALOG_COLOR,
   DEFAULT_FONT_FAMILY,
   DEFAULT_GRID_BG,
@@ -85,6 +87,11 @@ import {
   type TextAreaData,
 } from './types';
 import './styles.css';
+
+/** テキスト枠の外郭1px罫の既定色 — kimetron が .ki-obj の
+    borderColor として使う。升目枠は文書設定「升目の外枠線」で
+    'transparent' へ切替えられる（幾何は変えず色だけ消す） */
+const FRAME_STROKE = 'rgba(90,110,140,0.4)';
 
 /** ページ枠を kimetron オブジェクトとして展開する。
     locked + layer -1 で最背面・操作対象外（hitFilter でも除外）。
@@ -347,7 +354,7 @@ function buildWritingDoc(font: string): {
       // fill は他の枠生成経路（genkoAreaObjs）と同じ既定 —
       // 持たないと P1 だけ塗りの有無がずれる
       style: {
-        stroke: 'rgba(90,110,140,0.4)',
+        stroke: FRAME_STROKE,
         fill: gridLineCss(DEFAULT_GRID_BG, 0),
       },
       // 既定は縦書き（v0.1 の新規エリア既定と同じ）
@@ -666,6 +673,10 @@ export function App() {
   // v1.1: 升目デザイン — 文書設定（doc.json の genkoStyle）。
   // masu=升目（既定）/ tate=段罫のみ / none=罫なし
   const [genkoStyle, setGenkoStyle] = useState<GenkoStyle>('masu');
+  // v1.2: 升目枠の外枠線 — 文書設定（doc.json の genkoFrame）。
+  // 升目線の透過を下げても枠の1px罫だけ残るのを消す。画面のみ
+  // （印刷の .parea は元々外枠線を出さない）。用紙の枠は別物で残る
+  const [genkoFrameOn, setGenkoFrameOn] = useState(true);
   // v1.1: 会話「」の色分け — 文書設定（画面のみ・印刷には出ない）
   const [dialogHl, setDialogHl] = useState(false);
   const [dialogColor, setDialogColor] = useState(DEFAULT_DIALOG_COLOR);
@@ -720,6 +731,7 @@ export function App() {
     genkoStyle: GenkoStyle;
     dialogHl: boolean;
     dialogColor: string;
+    genkoFrame: boolean;
   };
   const histRef = useRef<{ past: Snap[]; future: Snap[]; last: number }>({
     past: [],
@@ -1095,7 +1107,7 @@ export function App() {
       w: f.w,
       h: f.h,
       style: {
-        stroke: 'rgba(90,110,140,0.4)',
+        stroke: genkoFrameOn ? FRAME_STROKE : 'transparent',
         fill: gridLineCss(gridBg, gridBgAlpha),
       },
       data: {
@@ -1292,6 +1304,7 @@ export function App() {
     genkoStyle,
     dialogHl,
     dialogColor,
+    genkoFrame: genkoFrameOn,
   });
   const applySnap = (s: Snap) => {
     applyingRef.current = true;
@@ -1318,6 +1331,8 @@ export function App() {
                     s.gridBg ?? DEFAULT_GRID_BG,
                     s.gridBgAlpha ?? 0,
                   ),
+                  // v1.2: 升目枠の外枠線をスナップ値へ戻す
+                  stroke: s.genkoFrame === false ? 'transparent' : FRAME_STROKE,
                 },
               }
             : o;
@@ -1347,6 +1362,7 @@ export function App() {
     setGenkoStyle(s.genkoStyle);
     setDialogHl(s.dialogHl);
     setDialogColor(s.dialogColor);
+    setGenkoFrameOn(s.genkoFrame);
     snapRef.current = s;
     applyingRef.current = false;
   };
@@ -1388,7 +1404,7 @@ export function App() {
     }
     snapRef.current = makeSnap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, kinsoku, goal, genkoStyle, dialogHl, dialogColor]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, kinsoku, goal, genkoStyle, dialogHl, dialogColor, genkoFrameOn]);
 
   // 未保存変更があるときの離脱警告
   useEffect(() => {
@@ -1443,6 +1459,7 @@ export function App() {
           genkoStyle: 'masu' as const,
           dialogHl: false,
           dialogColor: DEFAULT_DIALOG_COLOR,
+          genkoFrame: true,
         };
         const cur = {
           spec: r.model.spec,
@@ -1470,6 +1487,7 @@ export function App() {
           genkoStyle: r.genkoStyle,
           dialogHl: r.dialogHl,
           dialogColor: r.dialogColor,
+          genkoFrame: r.genkoFrame,
         };
         if (JSON.stringify(blank) === JSON.stringify(cur)) return;
         applyArchive(r);
@@ -1518,6 +1536,7 @@ export function App() {
           genkoStyle,
           dialogHl,
           dialogColor,
+          genkoFrame: genkoFrameOn,
         });
         const fp = docFp(createdAtRef.current, docTitle);
         void saveDraft(u8, fp).then((at) => {
@@ -1530,7 +1549,7 @@ export function App() {
     }, 1500);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, kinsoku, goal, genkoStyle, dialogHl, dialogColor]);
+  }, [engine.doc.objects, chains, model, footer, docTitle, pageOpacity, docFont, docColor, pageNum, gridPrint, genko, gridColor, gridAlpha, hashira, margins, gridBg, gridBgAlpha, paperColor, collapseNl, kinsoku, goal, genkoStyle, dialogHl, dialogColor, genkoFrameOn]);
 
   // v0.7: 執筆モードのホイール = ページめくり — ページビューア化で
   // 可変ズームと自由パンを廃止したため、ホイール送りは現ページ±1へ
@@ -1640,19 +1659,22 @@ export function App() {
 
   // v0.9: 升目マスの背景色 → 升目枠オブジェクトの fill を即時反映
   // （data.genko を持つ枠のみ。手動で色を変えた枠も文書設定へ戻る）
+  // v1.2: 升目の外枠線も同じ経路で正規化 — OFF は 'transparent'
+  // （1px 罫の幅は残るので .ta の負マージン計測箱は変わらない）
   useEffect(() => {
     const fill = gridLineCss(gridBg, gridBgAlpha);
+    const stroke = genkoFrameOn ? FRAME_STROKE : 'transparent';
     engine.setDoc({
       ...engine.doc,
       objects: engine.doc.objects.map((o) => {
         const d = o.data as TextAreaData | undefined;
         return d?.genko || d?.auto
-          ? { ...o, style: { ...(o.style ?? {}), fill } }
+          ? { ...o, style: { ...(o.style ?? {}), fill, stroke } }
           : o;
       }),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gridBg, gridBgAlpha]);
+  }, [gridBg, gridBgAlpha, genkoFrameOn]);
 
   // G3: 用紙の透過 → ページ枠オブジェクトの fill を即時反映
   useEffect(() => {
@@ -1699,6 +1721,7 @@ export function App() {
     setGenkoStyle('masu');
     setDialogHl(false);
     setDialogColor(DEFAULT_DIALOG_COLOR);
+    setGenkoFrameOn(true);
     createdAtRef.current = new Date().toISOString();
     // v0.11: 文書が切り替わった時点で fp を更新 — 旧文書の
     // 下書きが残っていても次回起動で誤復元しない
@@ -1737,6 +1760,7 @@ export function App() {
       genkoStyle,
       dialogHl,
       dialogColor,
+      genkoFrame: genkoFrameOn,
     });
   const confirmSave = (name: string) => {
     const u8 = packCurrent();
@@ -1802,6 +1826,8 @@ export function App() {
                   r.gridBg ?? DEFAULT_GRID_BG,
                   r.gridBgAlpha ?? 0,
                 ),
+                // v1.2: 升目枠の外枠線 — 書庫値へ正規化
+                stroke: r.genkoFrame === false ? 'transparent' : FRAME_STROKE,
               },
             }
           : o;
@@ -1836,6 +1862,7 @@ export function App() {
     setGenkoStyle(r.genkoStyle);
     setDialogHl(r.dialogHl);
     setDialogColor(r.dialogColor);
+    setGenkoFrameOn(r.genkoFrame);
     createdAtRef.current = r.createdAt || new Date().toISOString();
     // v0.11: 下書き fingerprint を開いた文書へ更新（下書き復元
     // 経路でも同一 fp になるため二重書きは害なし）
@@ -2052,7 +2079,7 @@ export function App() {
       y: Math.round(w.y / gs) * gs,
       w: 60,
       h: 45,
-      style: { stroke: 'rgba(90,110,140,0.4)' },
+      style: { stroke: FRAME_STROKE },
       // 新規エリアの既定は縦書き（旧データの writing 欠落は横扱いのまま）
       data: { ...DEFAULT_TEXT_DATA, fontFamily: docFont, writing: 'vertical-rl' },
     });
@@ -2509,7 +2536,7 @@ export function App() {
             w: pr.w - ni.l - ni.r,
             h: pr.h - ni.t - ni.b,
             style: {
-              stroke: 'rgba(90,110,140,0.4)',
+              stroke: FRAME_STROKE,
               fill: gridLineCss(gridBg, gridBgAlpha),
             },
             data: {
@@ -3614,7 +3641,7 @@ export function App() {
           y,
           w,
           h,
-          style: { stroke: 'rgba(90,110,140,0.4)' },
+          style: { stroke: FRAME_STROKE },
           data: {
             url: '',
             aspect: h / w,
@@ -4566,11 +4593,12 @@ export function App() {
             // v0.13: 傍線（青空注記由来）— 縦組は字の右側へ引く
             // （ルビ欄側=段の下側。青空 XHTML の underline 規定位置）
             textUnderlinePosition: a?.bosen ? 'right' : undefined,
-            // 傍点（青空注記由来）— 横書きは sesame、縦書きは
-            // よみがな扱いでルビ欄へ「・」（vtrender 側）
-            textEmphasis: a?.boten ? 'sesame' : undefined,
+            // 傍点（青空注記由来）— 横書きは text-emphasis、縦書きは
+            // よみがな扱いでルビ欄へ字形を出す（vtrender 側）
+            textEmphasis: botenCss(a?.boten),
           },
-          boten: a?.boten,
+          boten: botenRt(a?.boten),
+          kei: a?.kei,
           title: a?.link,
         };
       };
@@ -4701,7 +4729,9 @@ export function App() {
                         : r.attrs.underline || r.attrs.link
                           ? 'underline'
                           : undefined,
-                      textEmphasis: r.attrs.boten ? 'sesame' : undefined,
+                      textEmphasis: botenCss(r.attrs.boten),
+                      // v1.2: 罫囲み — ランごとの枠（行・段またぎは分割）
+                      boxShadow: r.attrs.kei ? '0 0 0 1px' : undefined,
                     }}
                   >
                     {r.text}
@@ -4893,6 +4923,8 @@ export function App() {
     onKinsoku: setKinsoku,
     genkoStyle,
     onGenkoStyle: setGenkoStyle,
+    genkoFrame: genkoFrameOn,
+    onGenkoFrame: setGenkoFrameOn,
     dialogHl,
     onDialogHl: setDialogHl,
     dialogColor,

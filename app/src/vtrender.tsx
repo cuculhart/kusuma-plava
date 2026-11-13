@@ -17,9 +17,13 @@ export interface VStyle {
   link?: string;
   /** title 属性（リンクのツールチップ等） */
   title?: string;
-  /** 傍点 — よみがな扱いでルビ欄へ「・」を出す
-      （CSS text-emphasis だと 1em セル内へ収まり升目へ重なる） */
-  boten?: boolean;
+  /** 傍点 — よみがな扱いでルビ欄へ字形を出す
+      （CSS text-emphasis だと 1em セル内へ収まり升目へ重なる。
+      v1.2: 種別対応 — '・'・'◦'・'●'・'○'・'◎'・'◉'・'×'） */
+  boten?: string;
+  /** 罫囲み — 連続する kei 単位を .kei span で包み罫線枠を引く。
+      改行・段またぎでは区間ごとの枠へ分かれる（v1.2） */
+  kei?: boolean;
 }
 
 /**
@@ -37,9 +41,29 @@ export function vunitSpans(
   segH?: number,
 ): ReactNode[] {
   const out: ReactNode[] = [];
+  // v1.2: 罫囲み — kei フラグ連続の単位を .kei で包んで枠線を引く。
+  // 非 kei・改行・区切りで区切る（区間ごとの枠）
+  let keiN = 0;
+  let keiBuf: ReactNode[] = [];
+  const flushKei = () => {
+    if (!keiBuf.length) return;
+    out.push(
+      <span key={`kei${keiN++}`} className="kei">
+        {keiBuf}
+      </span>,
+    );
+    keiBuf = [];
+  };
+  const push = (el: ReactNode, kei?: boolean) => {
+    if (kei) keiBuf.push(el);
+    else {
+      flushKei();
+      out.push(el);
+    }
+  };
   for (const u of units) {
     if (u.kind === 'brk') {
-      out.push('\n');
+      push('\n');
       continue;
     }
     const s = styleOf(u.start);
@@ -49,7 +73,7 @@ export function vunitSpans(
     if (u.kind === 'sep' && segH === undefined) {
       // vseg 無しの経路 — 字ごとの通常単位としてそのまま出す
       for (const [i, ch] of [...u.text].entries())
-        out.push(
+        push(
           <span
             key={`${u.start}.${i}`}
             className="vc"
@@ -58,11 +82,12 @@ export function vunitSpans(
           >
             {ch}
           </span>,
+          s.kei,
         );
       continue;
     }
     if (u.kind === 'sep' && segH !== undefined) {
-      out.push(
+      push(
         <span
           key={u.start}
           className="vsep"
@@ -109,7 +134,7 @@ export function vunitSpans(
         const inner = (
           <ruby>
             <span className="vc">{ch}</span>
-            <rt>・</rt>
+            <rt>{s.boten}</rt>
           </ruby>
         );
         const css = {
@@ -117,7 +142,7 @@ export function vunitSpans(
           textEmphasis: undefined,
           inlineSize: '1em',
         } as CSSProperties;
-        out.push(
+        push(
           s.link ? (
             <a
               key={`${u.start}.${i}`}
@@ -140,6 +165,7 @@ export function vunitSpans(
               {inner}
             </span>
           ),
+          s.kei,
         );
       }
       continue;
@@ -173,7 +199,7 @@ export function vunitSpans(
       ) : (
         u.text
       );
-    out.push(
+    push(
       s.link ? (
         <a
           key={u.start}
@@ -191,7 +217,9 @@ export function vunitSpans(
           {inner}
         </span>
       ),
+      s.kei,
     );
   }
+  flushKei();
   return out;
 }

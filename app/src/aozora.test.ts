@@ -6,7 +6,7 @@ describe('parseAozora — 青空注記 → text + marks', () => {
     const r = parseAozora('絶対に［＃「絶対に」に傍点］そうです。');
     expect(r.text).toBe('絶対にそうです。');
     expect(r.marks).toEqual([
-      { start: 0, end: 3, attrs: { boten: true } },
+      { start: 0, end: 3, attrs: { boten: 'sesame' } },
     ]);
     expect(r.handled).toBe(1);
     expect(r.dropped).toBe(0);
@@ -55,8 +55,8 @@ describe('parseAozora — 青空注記 → text + marks', () => {
     );
     expect(r.text).toBe('思わぬ人たちと遊びたい。\nいつも');
     expect(r.marks).toEqual([
-      { start: 0, end: 3, attrs: { boten: true } },
-      { start: 13, end: 16, attrs: { boten: true } },
+      { start: 0, end: 3, attrs: { boten: 'sesame' } },
+      { start: 13, end: 16, attrs: { boten: 'sesame' } },
     ]);
   });
 
@@ -313,6 +313,94 @@ describe('parseAozora — 強調注記: 傍線・太字・斜体（v0.13）', ()
     expect(r.marks).toEqual([
       { start: 0, end: 4, attrs: { bosen: 'solid' } },
     ]);
+  });
+});
+
+describe('parseAozora — 傍点の種別・開始/終了型（v1.2）', () => {
+  it('種別つき前方参照: 白丸・黒丸・二重丸・蛇の目・ばってん・白ゴマ', () => {
+    expect(
+      parseAozora('字［＃「字」に白丸傍点］').marks[0].attrs,
+    ).toEqual({ boten: 'open circle' });
+    expect(
+      parseAozora('字［＃「字」に黒丸傍点］').marks[0].attrs,
+    ).toEqual({ boten: 'filled circle' });
+    expect(
+      parseAozora('字［＃「字」に二重丸傍点］').marks[0].attrs,
+    ).toEqual({ boten: 'open double-circle' });
+    expect(
+      parseAozora('字［＃「字」に蛇の目傍点］').marks[0].attrs,
+    ).toEqual({ boten: 'filled double-circle' });
+    expect(
+      parseAozora('字［＃「字」にばってん傍点］').marks[0].attrs,
+    ).toEqual({ boten: "'×'" });
+    expect(
+      parseAozora('字［＃「字」に白ゴマ傍点］').marks[0].attrs,
+    ).toEqual({ boten: 'open sesame' });
+  });
+
+  it('開始/終了型傍点: ［＃傍点］…［＃傍点終わり］・種別つき', () => {
+    const r = parseAozora('［＃傍点］絶対に［＃傍点終わり］。');
+    expect(r.text).toBe('絶対に。');
+    expect(r.marks).toEqual([
+      { start: 0, end: 3, attrs: { boten: 'sesame' } },
+    ]);
+    expect(r.handled).toBe(2);
+    const w = parseAozora('［＃白丸傍点］対象［＃白丸傍点終わり］');
+    expect(w.marks).toEqual([
+      { start: 0, end: 2, attrs: { boten: 'open circle' } },
+    ]);
+  });
+
+  it('ブロック型傍点: ［＃ここから傍点］…［＃ここで傍点終わり］', () => {
+    const r = parseAozora(
+      '前。\n［＃ここから傍点］\n対象\n［＃ここで傍点終わり］\n後。',
+    );
+    expect(r.text).toBe('前。\n対象\n後。');
+    expect(r.marks).toEqual([
+      { start: 3, end: 6, attrs: { boten: 'sesame' } },
+    ]);
+    expect(r.handled).toBe(2);
+  });
+});
+
+describe('parseAozora — 罫囲み・段落（v1.2）', () => {
+  it('罫囲み前方参照: 直前の対象へ kei mark', () => {
+    const r = parseAozora('この帯［＃「この帯」は罫囲み］だ');
+    expect(r.text).toBe('この帯だ');
+    expect(r.marks).toEqual([
+      { start: 0, end: 3, attrs: { kei: true } },
+    ]);
+    expect(r.handled).toBe(1);
+  });
+
+  it('罫囲みブロック: ［＃ここから罫囲み］…［＃ここで罫囲み終わり］', () => {
+    const r = parseAozora(
+      '前。\n［＃ここから罫囲み］\n帯の中\n［＃ここで罫囲み終わり］\n後。',
+    );
+    expect(r.text).toBe('前。\n帯の中\n後。');
+    expect(r.marks).toEqual([
+      { start: 3, end: 7, attrs: { kei: true } },
+    ]);
+    expect(r.handled).toBe(2);
+  });
+
+  it('段落（行頭の対象）: 対象の直前へ全角スペースを挿入', () => {
+    const r = parseAozora('段落です［＃「段落です」は段落］');
+    expect(r.text).toBe('　段落です');
+    expect(r.marks).toEqual([]);
+    expect(r.handled).toBe(1);
+  });
+
+  it('段落（行中の対象）: 対象を改行で分断して1字下げ', () => {
+    const r = parseAozora('前の文。段落です［＃「段落です」は段落］');
+    expect(r.text).toBe('前の文。\n　段落です');
+    expect(r.handled).toBe(1);
+  });
+
+  it('段落（対象ズレ）: 注記はそのまま残す', () => {
+    const r = parseAozora('別の文［＃「段落です」は段落］');
+    expect(r.text).toBe('別の文［＃「段落です」は段落］');
+    expect(r.handled).toBe(0);
   });
 });
 

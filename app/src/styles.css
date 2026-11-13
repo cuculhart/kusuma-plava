@@ -586,6 +586,13 @@ body,
   overflow: hidden;
 }
 
+/* v1.2: 罫囲み — kei mark の連続単位を包む罫線枠。
+   box-shadow はレイアウトを動かさず、改行・段またぎでは
+   区間ごとの枠へ分かれる。色は currentColor（文字色に従う） */
+.kei {
+  box-shadow: 0 0 0 1px;
+}
+
 .oflabel {
   position: absolute;
   right: 2px;

@@ -1,7 +1,7 @@
 {
   "name": "inimbal",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "INIMBAL — kusuma-plava 固有の組版 stratum on Kimetron Isle。Text-chain flow + 縦書き組版（tategaki）・青空 marks。silim-murlun の inimbal から独立 — 同期・backport はしない",
   "type": "module",
   "exports": {

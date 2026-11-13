@@ -5,7 +5,9 @@
 // 手動マーク（生座標）の変換にも使う。
 //
 // 対応注記（sample/shayo.txt 実データで網羅）:
-//   - 対象［＃「対象」に傍点］       → 直前テキストへ boten mark
+//   - 対象［＃「対象」に[種別]傍点］  → 直前テキストへ boten mark
+//     （v1.2: 種別対応 — 白丸・黒丸・二重丸・蛇の目・ばってん・
+//     白ゴマ/黒ゴマ。開始/終了・ブロック型の傍点も受理）
 //   - 対象［＃「対象」は大/中/小見出し］ → 直前テキストへ fontSize mark
 //   - ［＃○字下げ］（行頭）          → 全角スペース○字へ置換
 //   - ［＃ここから○字下げ］…［＃ここで字下げ終わり］
@@ -38,6 +40,10 @@
 //                                   → bold mark（v0.13）
 //   - 対象［＃「対象」は斜体］/［＃斜体］…/［＃ここから斜体］…
 //                                   → italic mark（v0.13）
+//   - 対象［＃「対象」は罫囲み］/［＃ここから罫囲み］…［＃ここで罫囲み
+//     終わり］                       → kei mark（v1.2。区間への罫線枠）
+//   - 対象［＃「対象」は段落］        → 対象を新行+1字下げの段落へ畳む
+//                                   （v1.2。行頭でなければ改行を挿入）
 //   - ［＃］                        → 説明文としてそのまま残す
 //   - 上記以外（※外字注記含む）      → 除去して件数を dropped で報告
 // 前方参照型は対象文字列と直前テキストを照合し、ズレた注記は
@@ -83,7 +89,22 @@ const fw = (s: string) =>
   s.replace(/[０-９]/g, (c) => String(c.charCodeAt(0) - 0xff10));
 
 const ANNOTATION = /［＃([^］]*)］/g;
-const FW_BOTEN = /^「(.+)」に.*傍点$/;
+// v1.2: 傍点の種別 — 「…」に白丸傍点 等。種別は CSS
+// text-emphasis 値へ畳む（未知の種別は既定 sesame へ — 旧来の
+// 受理範囲を狭めないため正規表現は種別をキャプチャするだけ）
+const FW_BOTEN = /^「(.+)」に(.*)傍点$/;
+const BOTEN_STYLE: Record<string, string> = {
+  '': 'sesame', // 傍点（黒ゴマ。既定）
+  黒ゴマ: 'sesame',
+  白ゴマ: 'open sesame',
+  黒丸: 'filled circle',
+  白丸: 'open circle',
+  二重丸: 'open double-circle',
+  蛇の目: 'filled double-circle',
+  ばってん: "'×'",
+};
+const botenStyle = (key: string): string =>
+  BOTEN_STYLE[key] ?? 'sesame';
 const FW_HEADING = /^「(.+)」は[大中小]見出し$/;
 const FW_CAPTION = /^「(.+)」はキャプション$/;
 // v0.13: 強調系の前方参照 — 傍線（左指定含む）・太字・斜体。
@@ -91,16 +112,23 @@ const FW_CAPTION = /^「(.+)」はキャプション$/;
 const FW_BOSEN = /^「(.+)」(?:に|の左に)(二重傍線|鎖線|破線|波線|傍線)$/;
 const FW_BOLD = /^「(.+)」は太字$/;
 const FW_ITALIC = /^「(.+)」は斜体$/;
+// v1.2: 罫囲み・段落 — 段落は対象を新行+1字下げの段落へ畳む
+const FW_KEI = /^「(.+)」は罫囲み$/;
+const FW_PARA = /^「(.+)」は段落$/;
 // 強調系の開始/終了型 — 傍線系（左に/種別）・太字・斜体。
 // 開始と終了は注記の「終わり」を除いた文字列が一致するペア
 const BOSEN_KEY = '(?:左に)?(?:二重傍線|鎖線|破線|波線|傍線)';
-const DECO_KEY = new RegExp('^' + BOSEN_KEY + '$|^太字$|^斜体$');
+// v1.2: 傍点（種別つき含む）・罫囲みも開始/終了・ブロック型を受理
+const BOTEN_KEY = '(?:白丸|黒丸|二重丸|蛇の目|ばってん|白ゴマ|黒ゴマ)?傍点';
+const DECO_KEY = new RegExp(
+  '^' + BOSEN_KEY + '$|^太字$|^斜体$|^' + BOTEN_KEY + '$|^罫囲み$',
+);
 // ブロック型の強調 — ［＃ここから太字］…［＃ここで太字終わり］
 const DECO_BLOCK_OPEN = new RegExp(
-  '^［＃ここから(' + BOSEN_KEY + '|太字|斜体)］$',
+  '^［＃ここから(' + BOSEN_KEY + '|太字|斜体|' + BOTEN_KEY + '|罫囲み)］$',
 );
 const DECO_BLOCK_CLOSE = new RegExp(
-  '^［＃ここで(' + BOSEN_KEY + '|太字|斜体)終わり］$',
+  '^［＃ここで(' + BOSEN_KEY + '|太字|斜体|' + BOTEN_KEY + '|罫囲み)終わり］$',
 );
 /** 強調系のキー注記 → TextAttrs */
 const BOSEN_STYLE = {
@@ -113,6 +141,8 @@ const BOSEN_STYLE = {
 const decoAttrs = (key: string): TextMark['attrs'] => {
   if (key === '太字') return { bold: true };
   if (key === '斜体') return { italic: true };
+  if (key === '罫囲み') return { kei: true };
+  if (key.endsWith('傍点')) return { boten: botenStyle(key.slice(0, -2)) };
   const m = key.match(/(二重傍線|鎖線|破線|波線|傍線)$/);
   return m ? { bosen: BOSEN_STYLE[m[1] as keyof typeof BOSEN_STYLE] } : {};
 };
@@ -199,6 +229,9 @@ export function parseAozora(
   const images: AozoraImage[] = [];
   const breaks: AozoraResult['breaks'] = [];
   const edits: Edit[] = [];
+  // v1.2: 段落注記は対象の生位置へ遡る挿入 edit を足すため
+  // rawS 昇順が崩れ得る — 組み立て前に整列する
+  let editsUnsorted = false;
   let handled = 0;
   let dropped = 0;
   const outLines: string[] = [];
@@ -512,17 +545,19 @@ export function parseAozora(
       const bs = note.match(FW_BOSEN);
       const bd = note.match(FW_BOLD);
       const it = note.match(FW_ITALIC);
+      const kj = note.match(FW_KEI);
+      const pa = note.match(FW_PARA);
       const im = note.match(IMAGE_NOTE);
       const chm = note.match(LINE_CHIAGE);
-      if (b || h || cb || bs || bd || it) {
-        const t = (b ?? h ?? cb ?? bs ?? bd ?? it)![1];
+      if (b || h || cb || bs || bd || it || kj) {
+        const t = (b ?? h ?? cb ?? bs ?? bd ?? it ?? kj)![1];
         if (out.endsWith(t)) {
           const s = offset - t.length;
           marks.push({
             start: s,
             end: offset,
             attrs: b
-              ? { boten: true }
+              ? { boten: botenStyle(b[2] ?? '') }
               : bs
                 ? {
                     bosen:
@@ -534,7 +569,9 @@ export function parseAozora(
                   ? { bold: true }
                   : it
                     ? { italic: true }
-                    : { fontSize: h ? headingFs : captionFs },
+                    : kj
+                      ? { kei: true }
+                      : { fontSize: h ? headingFs : captionFs },
           });
           handled++;
           edits.push({
@@ -543,6 +580,35 @@ export function parseAozora(
             parsedS: offset,
             insLen: 0,
           });
+        } else {
+          out += m[0]; // 対象ズレの注記はそのまま残す
+          offset += m[0].length;
+        }
+      } else if (pa) {
+        // v1.2: 段落 — 対象を新行+1字下げの段落へ畳む。対象の直前
+        // （行中なら改行を入れて）全角スペースを挿入する。注記自身は
+        // 除去 — 挿入 edit は対象の生位置へ置く（edits は rawS 昇順が
+        // 前提のため、後から整列する）
+        const t = pa[1];
+        if (out.endsWith(t)) {
+          const s = out.length - t.length;
+          const ins = s > 0 && out[s - 1] !== '\n' ? '\n' + SP : SP;
+          out = out.slice(0, s) + ins + out.slice(s);
+          offset += ins.length;
+          edits.push({
+            rawS: lineRaw + at - t.length + shift,
+            rawE: lineRaw + at - t.length + shift,
+            parsedS: offset - t.length - ins.length,
+            insLen: ins.length,
+          });
+          edits.push({
+            rawS: lineRaw + at + shift,
+            rawE: lineRaw + at + m[0].length + shift,
+            parsedS: offset - t.length,
+            insLen: 0,
+          });
+          handled++;
+          editsUnsorted = true;
         } else {
           out += m[0]; // 対象ズレの注記はそのまま残す
           offset += m[0].length;
@@ -738,6 +804,13 @@ export function parseAozora(
     marks.push({ start: chiS, end: text.length, attrs: { bottomLift: chiLift } });
   for (const [k, s] of decoOpen)
     marks.push({ start: s, end: text.length, attrs: decoAttrs(k) });
+
+  // 段落注記の遡り挿入で rawS 昇順が崩れた場合だけ整列する
+  // （同一 rawS では幅ゼロの挿入を先へ — 「挿入してから除去」の順）
+  if (editsUnsorted)
+    edits.sort(
+      (a, b) => a.rawS - b.rawS || a.rawE - b.rawE || a.insLen - b.insLen,
+    );
 
   const { toParsed, toRaw } = buildMaps(edits);
   return { text, marks, images, breaks, handled, dropped, toParsed, toRaw };

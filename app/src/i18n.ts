@@ -204,6 +204,9 @@ const ja = {
   'doc.genkoStyle.none': '罫なし',
   'doc.genkoStyleTip':
     '原稿用紙の罫線デザイン — 段罫のみ: 字ごとの横線を抜き段の区切りだけ残す / 罫なし: 升目線を消す（印刷にも適用）',
+  'doc.genkoFrame': '升目の外枠線',
+  'doc.genkoFrameTip':
+    '升目枠の一番外の線 — 升目線の透過を下げても残る枠の罫を消します（画面のみ — 印刷には元々出ません。用紙の枠は消えません）',
   'doc.dialogHl': '会話「」を色分け',
   'doc.dialogHlTip':
     '「…」で括られた会話部分を指定色で表示します（執筆中の見やすさ用 — 印刷には出ません）',
@@ -226,6 +229,7 @@ const ja = {
   'doc.hint': '未選択 / 複数選択 — オブジェクトを選ぶとプロパティが出ます',
   'img.title': '画像',
   'img.lock': 'アスペクト比をロック',
+  'img.caption': 'キャプション',
   'img.phHint':
     '空枠（青空画像注記）— この枠を選んだ状態で画像の貼り付け・読込を行うと割り当てられます',
   'img.phClick': '選択して画像を貼付・読込',
@@ -507,6 +511,9 @@ const en: Record<keyof typeof ja, string> = {
   'doc.genkoStyle.none': 'None',
   'doc.genkoStyleTip':
     'Manuscript grid design — column rules keeps only the column separators (drops per-char lines); none hides the grid entirely (also affects printing)',
+  'doc.genkoFrame': 'Grid frame edge',
+  'doc.genkoFrameTip':
+    'Outermost line of the grid frame — removes the frame rule that stays even at low grid opacity (screen only — never printed; the paper edge is kept)',
   'doc.dialogHl': 'Highlight dialogue',
   'doc.dialogHlTip':
     'Colors text inside 「…」 quotes with the chosen color (writing aid — not printed)',
@@ -529,6 +536,7 @@ const en: Record<keyof typeof ja, string> = {
   'doc.hint': 'Nothing / multiple selected — select an object for properties',
   'img.title': 'Image',
   'img.lock': 'Lock aspect ratio',
+  'img.caption': 'Caption',
   'img.phHint':
     'Empty frame (aozora image note) — paste or load an image while this frame is selected to fill it',
   'img.phClick': 'Select, then paste or load',

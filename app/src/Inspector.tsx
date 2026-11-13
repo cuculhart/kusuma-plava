@@ -314,6 +314,9 @@ export function RightDock({
     /** v1.1: 升目デザイン — 升目 / 段罫のみ / 罫なし */
     genkoStyle: GenkoStyle;
     onGenkoStyle: (s: GenkoStyle) => void;
+    /** v1.2: 升目枠の外枠線 — 画面のみ（印刷には元々出ない） */
+    genkoFrame: boolean;
+    onGenkoFrame: (v: boolean) => void;
     /** v1.1: 会話「」色分け — 画面のみ（印刷には出ない） */
     dialogHl: boolean;
     onDialogHl: (v: boolean) => void;
@@ -549,6 +552,18 @@ function ImageProps({
           }}
         />
         {t('img.lock')}
+      </label>
+      {/* v1.2: キャプション欄 — メモとして doc へ保持
+          （レンダリングはしない） */}
+      <label className="img-caption">
+        {t('img.caption')}
+        <input
+          type="text"
+          value={d.caption ?? ''}
+          onChange={(e) =>
+            onData({ caption: e.currentTarget.value || undefined })
+          }
+        />
       </label>
       <ZButtons onReorder={onReorder} t={t} />
     </div>
@@ -887,6 +902,8 @@ export function DocProps({
   onKinsoku,
   genkoStyle,
   onGenkoStyle,
+  genkoFrame,
+  onGenkoFrame,
   dialogHl,
   onDialogHl,
   dialogColor,
@@ -941,6 +958,8 @@ export function DocProps({
   onKinsoku: (k: KinsokuMode) => void;
   genkoStyle: GenkoStyle;
   onGenkoStyle: (s: GenkoStyle) => void;
+  genkoFrame: boolean;
+  onGenkoFrame: (v: boolean) => void;
   dialogHl: boolean;
   onDialogHl: (v: boolean) => void;
   dialogColor: string;
@@ -1271,6 +1290,16 @@ export function DocProps({
             <option value="tate">{t('doc.genkoStyle.tate')}</option>
             <option value="none">{t('doc.genkoStyle.none')}</option>
           </select>
+        </label>
+        {/* v1.2: 升目枠の外枠線 — 升目線を薄くしても残る枠の
+            1px罫を消す。画面のみ（印刷には元々出ない）。用紙の枠は残る */}
+        <label title={t('doc.genkoFrameTip')}>
+          <input
+            type="checkbox"
+            checked={genkoFrame}
+            onChange={(e) => onGenkoFrame(e.currentTarget.checked)}
+          />
+          {t('doc.genkoFrame')}
         </label>
         {/* v1.1: 会話「」色分け — 画面のみ（印刷には出ない） */}
         <label title={t('doc.dialogHlTip')}>

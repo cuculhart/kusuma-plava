@@ -100,6 +100,10 @@ interface ArchiveDoc {
   dialogHl?: boolean;
   /** v1.1: 会話色分けの色（#rrggbb）。欠落=DEFAULT_DIALOG_COLOR */
   dialogColor?: string;
+  /** v1.2: 升目枠の外枠線 — 画面のみ（印刷の .parea は元々
+      外枠線を出さない）。升目線の透過を下げても枠の1px罫だけ
+      残るのを消すスイッチ。欠落=true（出す） */
+  genkoFrame?: boolean;
 }
 
 const EXT_OF_MIME: Record<string, string> = {
@@ -161,6 +165,7 @@ export function packArchive(input: {
   genkoStyle?: GenkoStyle;
   dialogHl?: boolean;
   dialogColor?: string;
+  genkoFrame?: boolean;
 }): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   let imgN = 0;
@@ -214,6 +219,8 @@ export function packArchive(input: {
       input.dialogColor && input.dialogColor !== DEFAULT_DIALOG_COLOR
         ? input.dialogColor
         : undefined,
+    // 既定（出す）は書き出さない（欠落=true）
+    genkoFrame: input.genkoFrame === false ? false : undefined,
   };
   files['doc.json'] = strToU8(JSON.stringify(doc));
   return zipSync(files);
@@ -257,6 +264,8 @@ export function unpackArchive(bytes: Uint8Array): {
   dialogHl: boolean;
   /** v1.1: 会話色分けの色。欠落・不正値は既定色 */
   dialogColor: string;
+  /** v1.2: 升目枠の外枠線（画面のみ）。欠落は true */
+  genkoFrame: boolean;
 } {
   const files = unzipSync(bytes);
   const raw = files['doc.json'];
@@ -369,5 +378,6 @@ export function unpackArchive(bytes: Uint8Array): {
       /^#[0-9a-fA-F]{6}$/.test(doc.dialogColor)
         ? doc.dialogColor
         : DEFAULT_DIALOG_COLOR,
+    genkoFrame: doc.genkoFrame !== false,
   };
 }

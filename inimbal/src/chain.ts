@@ -128,8 +128,13 @@ export interface TextAttrs {
   underline?: boolean;
   /** URL リンク（印刷/PDF で <a> 化。編集画面では遷移しない） */
   link?: string;
-  /** 傍点（青空文庫注記由来 — 描画は一律「・」= sesame） */
-  boten?: boolean;
+  /** 傍点（青空文庫注記由来）— v1.2: 種別対応。true = 既定の
+      「・」（黒ゴマ = sesame。旧マークの後方互換値）。
+      文字列は CSS text-emphasis 値のまま保持する
+      （'sesame'・'open sesame'・'filled circle'・
+      'open circle'・'open double-circle'・
+      'filled double-circle'・"'×'" 等） */
+  boten?: true | string;
   /** v0.13: 傍線（青空文庫注記「…に傍線」系由来）— 縦組では字の
       左側（ルビ欄と反対側）、横組では下線として描く。値は CSS
       text-decoration-style と同名 */
@@ -148,6 +153,10 @@ export interface TextAttrs {
       この字数ぶん上げる（0=地付き。青空注記「地付き」「地から○字
       上げ」由来。段落レベルの組版属性） */
   bottomLift?: number;
+  /** v1.2: 罫囲み（青空注記「…は罫囲み」「ここから罫囲み」由来）—
+      対象範囲へ罫線枠を描く。段・行をまたぐときは区間ごとの枠へ
+      分かれる（box-decoration 相当の近似） */
+  kei?: boolean;
 }
 
 /** chain.text の [start,end) に効く書式マーク。後勝ち（属性単位の上書き） */
